@@ -381,13 +381,20 @@ export class BaseConnection extends EventEmitter {
     }
 
     protected sanitizeOutput(output: string, command: string): string {
-        // Remove the command echo
-        let cleanOutput = output.replace(new RegExp(command, 'g'), '');
+        // Escape special regex characters in the command
+        const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         
-        // Remove prompts
-        cleanOutput = cleanOutput.replace(new RegExp(this.basePrompt + '[>#$%]', 'g'), '');
-        cleanOutput = cleanOutput.replace(new RegExp(this.enabledPrompt, 'g'), '');
-        cleanOutput = cleanOutput.replace(new RegExp(this.configPrompt, 'g'), '');
+        // Remove the command echo
+        let cleanOutput = output.replace(new RegExp(escapedCommand, 'g'), '');
+        
+        // Remove prompts (escape special chars in prompts too)
+        const escapedBasePrompt = this.basePrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedEnabledPrompt = this.enabledPrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedConfigPrompt = this.configPrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        cleanOutput = cleanOutput.replace(new RegExp(escapedBasePrompt + '[>#$%]', 'g'), '');
+        cleanOutput = cleanOutput.replace(new RegExp(escapedEnabledPrompt, 'g'), '');
+        cleanOutput = cleanOutput.replace(new RegExp(escapedConfigPrompt, 'g'), '');
         
         // Remove extra whitespace and newlines
         cleanOutput = cleanOutput.replace(/^\s+|\s+$/g, '');

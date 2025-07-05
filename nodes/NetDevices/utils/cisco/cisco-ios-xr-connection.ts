@@ -227,11 +227,15 @@ export class CiscoIOSXRConnection extends BaseConnection {
     }
 
     protected sanitizeOutput(output: string, command: string): string {
+        // Escape special regex characters in the command
+        const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
         // Remove the command echo
-        let cleanOutput = output.replace(new RegExp(command, 'g'), '');
+        let cleanOutput = output.replace(new RegExp(escapedCommand, 'g'), '');
         
         // Remove IOS-XR specific prompts and artifacts
-        cleanOutput = cleanOutput.replace(new RegExp(this.basePrompt + '[>#$%]', 'g'), '');
+        const escapedBasePrompt = this.basePrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        cleanOutput = cleanOutput.replace(new RegExp(escapedBasePrompt + '[>#$%]', 'g'), '');
         cleanOutput = cleanOutput.replace(/RP\/\d+\/\w+\/CPU\d+:/g, '');
         
         // Remove extra whitespace and newlines

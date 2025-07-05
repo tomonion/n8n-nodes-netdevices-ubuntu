@@ -192,11 +192,15 @@ export class LinuxConnection extends BaseConnection {
     }
 
     protected sanitizeOutput(output: string, command: string): string {
+        // Escape special regex characters in the command
+        const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
         // Remove the command echo
-        let cleanOutput = output.replace(new RegExp(command, 'g'), '');
+        let cleanOutput = output.replace(new RegExp(escapedCommand, 'g'), '');
         
         // Remove shell prompts
-        cleanOutput = cleanOutput.replace(new RegExp(this.shellPrompt, 'g'), '');
+        const escapedShellPrompt = this.shellPrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        cleanOutput = cleanOutput.replace(new RegExp(escapedShellPrompt, 'g'), '');
         
         // Remove common shell artifacts
         cleanOutput = cleanOutput.replace(/\[.*?\]/g, ''); // Remove ANSI sequences

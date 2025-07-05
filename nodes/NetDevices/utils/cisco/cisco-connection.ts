@@ -290,12 +290,16 @@ export class CiscoConnection extends BaseConnection {
     }
 
     protected sanitizeOutput(output: string, command: string): string {
+        // Escape special regex characters in the command
+        const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
         // Remove the command echo
-        let cleanOutput = output.replace(new RegExp(command, 'g'), '');
+        let cleanOutput = output.replace(new RegExp(escapedCommand, 'g'), '');
         
         // Remove Cisco-specific prompts
-        cleanOutput = cleanOutput.replace(new RegExp(this.basePrompt + '[>#$%]', 'g'), '');
-        cleanOutput = cleanOutput.replace(new RegExp(this.basePrompt + '\\(config\\)#', 'g'), '');
+        const escapedBasePrompt = this.basePrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        cleanOutput = cleanOutput.replace(new RegExp(escapedBasePrompt + '[>#$%]', 'g'), '');
+        cleanOutput = cleanOutput.replace(new RegExp(escapedBasePrompt + '\\(config\\)#', 'g'), '');
         
         // Remove common Cisco CLI artifacts
         cleanOutput = cleanOutput.replace(/Building configuration\.\.\./g, '');
