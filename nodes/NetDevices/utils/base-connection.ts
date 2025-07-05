@@ -62,6 +62,60 @@ export class BaseConnection extends EventEmitter {
     }
 
     async connect(): Promise<void> {
+        // Try different algorithm configurations for maximum compatibility
+        const algorithmConfigs = [
+            // Modern algorithms preferred by ssh2 library
+            {
+                serverHostKey: [
+                    'ssh-rsa', 'rsa-sha2-256', 'rsa-sha2-512',
+                    'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
+                    'ssh-ed25519', 'ssh-dss'
+                ],
+                cipher: [
+                    'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+                    'aes128-cbc', 'aes192-cbc', 'aes256-cbc',
+                    '3des-cbc'
+                ],
+                hmac: [
+                    'hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1',
+                    'hmac-sha1-96'
+                ],
+                kex: [
+                    'diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512',
+                    'diffie-hellman-group14-sha1', 'diffie-hellman-group1-sha1',
+                    'ecdh-sha2-nistp256', 'ecdh-sha2-nistp384', 'ecdh-sha2-nistp521'
+                ]
+            },
+            // Fallback with only the most common algorithms
+            {
+                serverHostKey: ['ssh-rsa', 'ssh-dss'],
+                cipher: ['aes128-ctr', 'aes128-cbc', '3des-cbc'],
+                hmac: ['hmac-sha1', 'hmac-sha1-96'],
+                kex: ['diffie-hellman-group14-sha1', 'diffie-hellman-group1-sha1']
+            },
+            // Last resort - minimal algorithm set
+            {
+                serverHostKey: ['ssh-rsa'],
+                cipher: ['aes128-cbc'],
+                hmac: ['hmac-sha1'],
+                kex: ['diffie-hellman-group1-sha1']
+            }
+        ];
+
+        for (let i = 0; i < algorithmConfigs.length; i++) {
+            try {
+                await this.tryConnect(algorithmConfigs[i]);
+                return;
+            } catch (error) {
+                if (i === algorithmConfigs.length - 1) {
+                    throw error;
+                }
+                // Continue to next algorithm configuration
+            }
+        }
+    }
+
+    private async tryConnect(algorithms: any): Promise<void> {
         return new Promise((resolve, reject) => {
             const connectConfig: ConnectConfig = {
                 host: this.credentials.host,
@@ -70,12 +124,7 @@ export class BaseConnection extends EventEmitter {
                 password: this.credentials.password,
                 readyTimeout: this.timeout,
                 keepaliveInterval: this.credentials.keepAlive ? 30000 : undefined,
-                algorithms: {
-                    serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
-                    cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
-                    hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1'],
-                    kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512', 'diffie-hellman-group18-sha512']
-                }
+                algorithms: algorithms
             };
 
             this.client.once('ready', () => {

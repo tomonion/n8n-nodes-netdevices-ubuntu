@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-netdevices",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "n8n node to interact with network devices",
   "keywords": [
     "n8n-community-node-package",
@@ -42,7 +42,7 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/credentials/netDevicesApi.credentials.js"
+      "dist/credentials/NetDevicesApi.credentials.js"
     ],
     "nodes": [
       "dist/nodes/NetDevices/NetDevices.node.js"

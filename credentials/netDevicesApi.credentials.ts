@@ -1,7 +1,7 @@
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 import { ConnectionDispatcher } from '../nodes/NetDevices/utils/index';
 
-export class netDevicesApi implements ICredentialType {
+export class NetDevicesApi implements ICredentialType {
 	name = 'netDevicesApi';
 	displayName = 'Net Devices API';
 

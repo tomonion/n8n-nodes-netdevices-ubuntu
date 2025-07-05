@@ -9,22 +9,20 @@ import type {
 import { NodeOperationError } from 'n8n-workflow';
 import { ConnectHandler, DeviceCredentials, CommandResult } from './utils';
 
-export class netDevices implements INodeType {
+export class NetDevices implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Net Devices',
         name: 'netDevices',
         icon: 'file:netdevices-icon.svg',
         group: ['transform'],
-        version: [1, 0, 0],
+        version: 1,
         description: 'Manage network devices via SSH',
         defaults: {
             name: 'Net Devices',
         },
         usableAsTool: true,
-        // @ts-ignore
-        inputs: ['main'],
-        // @ts-ignore
-        outputs: ['main'],
+        inputs: ['main'] as any,
+        outputs: ['main'] as any,
         credentials: [
             {
                 displayName: 'netDevicesApi',
