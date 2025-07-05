@@ -1,0 +1,53 @@
+{
+  "name": "n8n-nodes-demo-weather9",
+  "version": "0.1.1",
+  "description": "n8n node for weather data using OpenWeatherMap API",
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/arpit-patel1/n8n-nodes-cityweather",
+  "author": {
+    "name": "Anonymous Seeker",
+    "email": "anonymous.seeker@example.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arpit-patel1/n8n-nodes-cityweather.git"
+  },
+  "engines": {
+    "node": ">=20.15"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "npx rimraf dist && tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "format": "prettier nodes credentials --write",
+    "lint": "eslint nodes credentials package.json",
+    "lintfix": "eslint nodes credentials package.json --fix",
+    "prepublishOnly": "npm run build && npm run lint -c .eslintrc.prepublish.js nodes credentials package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/DemoWeather9Api.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/DemoWeather9/DemoWeather9.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "~8.32.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-n8n-nodes-base": "^1.16.3",
+    "gulp": "^5.0.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}
