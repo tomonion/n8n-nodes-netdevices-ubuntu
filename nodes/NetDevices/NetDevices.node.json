@@ -1,17 +1,17 @@
 {
-	"node": "n8n-nodes-base.DemoWeather9",
+	"node": "n8n-nodes-base.netDevices",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
 	"categories": ["Miscellaneous", "Utility"],
 	"resources": {
 		"credentialDocumentation": [
 			{
-				"url": "https://docs.n8n.io/integrations/builtin/credentials/openWeatherMap/"
+				"url": "https://github.com/arpit-patel1/n8n-nodes-netdevices"
 			}
 		],
 		"primaryDocumentation": [
 			{
-				"url": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.openweathermap/"
+				"url": "https://github.com/arpit-patel1/n8n-nodes-netdevices"
 			}
 		],
 		"generic": [
