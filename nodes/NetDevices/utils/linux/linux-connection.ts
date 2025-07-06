@@ -254,15 +254,34 @@ export class LinuxConnection extends BaseConnection {
 
     private async setShellOptions(): Promise<void> {
         try {
+            Logger.debug('Setting shell options for clean command execution');
+            
             // Set shell to not exit on error (for command execution)
             await this.writeChannel('set +e' + this.newline);
             await this.readChannel(1000);
             
-            // Set prompt for better parsing
+            // Set a clean, consistent prompt for better parsing
             await this.writeChannel('export PS1="\\u@\\h:\\w\\$ "' + this.newline);
             await this.readChannel(1000);
+            
+            // Clear any remaining output from setup commands
+            await this.writeChannel('clear' + this.newline);
+            await this.readChannel(1000);
+            
+            // Send a final newline to ensure we're at a clean prompt
+            await this.writeChannel(this.newline);
+            const finalOutput = await this.readChannel(1000);
+            
+            Logger.debug('Shell options set successfully', {
+                finalOutputLength: finalOutput.length,
+                finalOutputSample: finalOutput.slice(-50)
+            });
+            
         } catch (error) {
-            // If this fails, it's not critical
+            Logger.debug('Failed to set shell options, continuing anyway', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            // If this fails, it's not critical - continue with default shell
         }
     }
 
@@ -272,8 +291,13 @@ export class LinuxConnection extends BaseConnection {
                 throw new Error('Not connected to device');
             }
 
+            Logger.debug('Sending command', { command, fastMode: this.fastMode });
+
             // Send the command
             await this.writeChannel(command + this.newline);
+            
+            // Add a small delay to ensure command starts executing
+            await new Promise(resolve => setTimeout(resolve, 100));
             
             // Use optimized timeout with better handling
             const timeout = this.fastMode ? 4000 : 8000;
@@ -281,8 +305,20 @@ export class LinuxConnection extends BaseConnection {
             // Wait for response with appropriate timeout
             const output = await this.readUntilPromptEnhanced(timeout);
             
+            Logger.debug('Command output received', {
+                command,
+                outputLength: output.length,
+                outputSample: output.slice(0, 200)
+            });
+            
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);
+            
+            Logger.debug('Command output cleaned', {
+                command,
+                cleanOutputLength: cleanOutput.length,
+                cleanOutputSample: cleanOutput.slice(0, 200)
+            });
 
             return {
                 command,
@@ -291,6 +327,11 @@ export class LinuxConnection extends BaseConnection {
             };
 
         } catch (error) {
+            Logger.error('Command execution failed', {
+                command,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            
             return {
                 command,
                 output: '',
@@ -464,23 +505,44 @@ export class LinuxConnection extends BaseConnection {
         // Escape special regex characters in the command
         const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         
-        // Remove the command echo
-        let cleanOutput = output.replace(new RegExp(escapedCommand, 'g'), '');
+        // Remove the command echo (first occurrence)
+        let cleanOutput = output.replace(new RegExp('^.*?' + escapedCommand + '.*?[\r\n]+', 'i'), '');
         
-        // Remove shell prompts
+        // Remove shell prompts and common artifacts
         const escapedShellPrompt = this.shellPrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         cleanOutput = cleanOutput.replace(new RegExp(escapedShellPrompt, 'g'), '');
         
-        // Remove common shell artifacts
-        cleanOutput = cleanOutput.replace(/\[.*?\]/g, ''); // Remove ANSI sequences
+        // Remove PS1 export commands and shell setup artifacts
+        cleanOutput = cleanOutput.replace(/export\s+PS1=.*?[\r\n]+/gi, '');
+        cleanOutput = cleanOutput.replace(/PS1=.*?[\r\n]+/gi, '');
+        
+        // Remove terminal control sequences (bracketed paste mode, etc.)
+        cleanOutput = cleanOutput.replace(/\[?\?2004[lh]/g, ''); // Bracketed paste mode
+        cleanOutput = cleanOutput.replace(/\[\?[0-9]+[lh]/g, ''); // Other terminal control sequences
+        cleanOutput = cleanOutput.replace(/\x1b\[[0-9;]*[mK]/g, ''); // ANSI escape sequences
+        cleanOutput = cleanOutput.replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''); // Other ANSI sequences
+        
+        // Remove shell prompts at the end of lines
         cleanOutput = cleanOutput.replace(/\$\s*$/gm, ''); // Remove trailing $
         cleanOutput = cleanOutput.replace(/#\s*$/gm, ''); // Remove trailing #
+        cleanOutput = cleanOutput.replace(/>\s*$/gm, ''); // Remove trailing >
         
-        // Remove extra whitespace and newlines
-        cleanOutput = cleanOutput.replace(/^\s+|\s+$/g, '');
-        cleanOutput = cleanOutput.replace(/\r\n/g, '\n');
-        cleanOutput = cleanOutput.replace(/\r/g, '\n');
-        cleanOutput = cleanOutput.replace(/\n\s*\n/g, '\n');
+        // Remove full prompt patterns
+        cleanOutput = cleanOutput.replace(/^[^@]*@[^:]*:[^$#>]*[$#>]\s*/gm, ''); // user@host:path$ patterns
+        cleanOutput = cleanOutput.replace(/^\[[^\]]*\]\s*[$#>]\s*/gm, ''); // [user@host] patterns
+        
+        // Remove set commands and shell options
+        cleanOutput = cleanOutput.replace(/set\s+[+-][a-z]+[\r\n]*/gi, '');
+        
+        // Remove empty lines and extra whitespace
+        cleanOutput = cleanOutput.replace(/^\s*[\r\n]+/gm, ''); // Remove empty lines at start
+        cleanOutput = cleanOutput.replace(/[\r\n]+\s*$/gm, ''); // Remove empty lines at end
+        cleanOutput = cleanOutput.replace(/\r\n/g, '\n'); // Normalize line endings
+        cleanOutput = cleanOutput.replace(/\r/g, '\n'); // Convert remaining \r to \n
+        cleanOutput = cleanOutput.replace(/\n\s*\n/g, '\n'); // Remove double newlines
+        
+        // Final cleanup - remove leading/trailing whitespace
+        cleanOutput = cleanOutput.trim();
         
         return cleanOutput;
     }
