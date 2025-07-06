@@ -150,6 +150,13 @@ export class NetDevices implements INodeType {
 						},
 					},
 					{
+						displayName: 'Connection Pooling',
+						name: 'connectionPooling',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to enable connection pooling for better performance',
+					},
+					{
 						displayName: 'Connection Retry Count',
 						name: 'connectionRetryCount',
 						type: 'number',
@@ -176,14 +183,14 @@ export class NetDevices implements INodeType {
 						name: 'failOnError',
 						type: 'boolean',
 						default: true,
-						description: 'Whether to fail the workflow on command errors (if false, errors are returned as data)',
+						description: 'Whether to fail the workflow on command errors',
 					},
 					{
 						displayName: 'Fast Mode',
 						name: 'fastMode',
 						type: 'boolean',
 						default: false,
-						description: 'Whether to enable fast mode for simple commands (skips some setup steps for better performance)',
+						description: 'Whether to enable fast mode for simple commands (skips setup steps)',
 					},
 					{
 						displayName: 'Retry Delay',
@@ -193,8 +200,15 @@ export class NetDevices implements INodeType {
 						description: 'Delay between retry attempts in seconds',
 						typeOptions: {
 							minValue: 1,
-							maxValue: 30,
+							maxValue: 60,
 						},
+					},
+					{
+						displayName: 'Reuse Connection',
+						name: 'reuseConnection',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to reuse existing connections when possible',
 					},
 				],
 			},
@@ -221,21 +235,28 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
         const connectionTimeout = Math.max(5, (advancedOptions.connectionTimeout as number) || 15) * 1000;
         const commandTimeout = Math.max(5, (advancedOptions.commandTimeout as number) || 10) * 1000;
         const failOnError = (advancedOptions.failOnError as boolean) !== false;
-        const fastMode = (advancedOptions.fastMode as boolean) === true;
+        const fastMode = (advancedOptions.fastMode as boolean) || false;
+        const connectionPooling = (advancedOptions.connectionPooling as boolean) || false;
+        const reuseConnection = (advancedOptions.reuseConnection as boolean) || false;
         
         try {
 
-            // Build device credentials with performance optimizations
-            const deviceCredentials: any = {
-                host: credentials.host,
-                port: credentials.port || 22,
-                username: credentials.username,
-                authMethod: credentials.authMethod || 'password',
-                deviceType: credentials.deviceType,
+            // Configure device credentials with optimization options
+            const deviceCredentials = {
+                host: credentials.host as string,
+                port: credentials.port as number,
+                username: credentials.username as string,
+                password: credentials.password as string,
+                authMethod: credentials.authMethod as 'password' | 'privateKey',
+                privateKey: credentials.privateKey as string,
+                passphrase: credentials.passphrase as string,
+                deviceType: credentials.deviceType as string,
                 timeout: connectionTimeout,
-                keepAlive: credentials.keepAlive !== false,
+                keepAlive: true,
                 fastMode: fastMode,
                 commandTimeout: commandTimeout,
+                connectionPooling: connectionPooling,
+                reuseConnection: reuseConnection,
             };
 
             // Add authentication-specific fields

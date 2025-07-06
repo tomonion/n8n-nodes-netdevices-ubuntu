@@ -14,6 +14,8 @@ export interface DeviceCredentials {
     keepAlive?: boolean;
     fastMode?: boolean;
     commandTimeout?: number;
+    reuseConnection?: boolean;
+    connectionPooling?: boolean;
 }
 
 export interface CommandResult {
@@ -37,6 +39,13 @@ export class BaseConnection extends EventEmitter {
     protected returnChar: string = '\r';
     protected fastMode: boolean = false;
     protected commandTimeout: number = 8000;
+    protected reuseConnection: boolean = false;
+    protected connectionPooling: boolean = false;
+    protected lastActivity: number = Date.now();
+
+    // Static connection pool for reusing connections
+    private static connectionPool: Map<string, BaseConnection> = new Map();
+    private static poolCleanupInterval: NodeJS.Timeout | null = null;
 
     constructor(credentials: DeviceCredentials) {
         super();
@@ -45,7 +54,10 @@ export class BaseConnection extends EventEmitter {
         this.timeout = credentials.timeout || 10000;
         this.fastMode = credentials.fastMode || false;
         this.commandTimeout = credentials.commandTimeout || 8000;
+        this.reuseConnection = credentials.reuseConnection || false;
+        this.connectionPooling = credentials.connectionPooling || false;
         this.setupEventHandlers();
+        this.setupConnectionPooling();
     }
 
     private setupEventHandlers(): void {
@@ -71,49 +83,35 @@ export class BaseConnection extends EventEmitter {
     }
 
     async connect(): Promise<void> {
-        // Try different algorithm configurations for maximum compatibility
-        const algorithmConfigs = [
-            // Modern algorithms preferred by ssh2 library
-            {
-                serverHostKey: [
-                    'ssh-rsa', 'rsa-sha2-256', 'rsa-sha2-512',
-                    'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
-                    'ssh-ed25519', 'ssh-dss'
-                ],
-                cipher: [
-                    'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
-                    'aes128-cbc', 'aes192-cbc', 'aes256-cbc',
-                    '3des-cbc'
-                ],
-                hmac: [
-                    'hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1',
-                    'hmac-sha1-96'
-                ],
-                kex: [
-                    'diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512',
-                    'diffie-hellman-group14-sha1', 'diffie-hellman-group1-sha1',
-                    'ecdh-sha2-nistp256', 'ecdh-sha2-nistp384', 'ecdh-sha2-nistp521'
-                ]
-            },
-            // Fallback with only the most common algorithms
-            {
-                serverHostKey: ['ssh-rsa', 'ssh-dss'],
-                cipher: ['aes128-ctr', 'aes128-cbc', '3des-cbc'],
-                hmac: ['hmac-sha1', 'hmac-sha1-96'],
-                kex: ['diffie-hellman-group14-sha1', 'diffie-hellman-group1-sha1']
-            },
-            // Last resort - minimal algorithm set
-            {
-                serverHostKey: ['ssh-rsa'],
-                cipher: ['aes128-cbc'],
-                hmac: ['hmac-sha1'],
-                kex: ['diffie-hellman-group1-sha1']
+        // Check for existing connection in pool
+        if (this.connectionPooling || this.reuseConnection) {
+            const connectionKey = this.getConnectionKey();
+            const existingConnection = BaseConnection.connectionPool.get(connectionKey);
+            
+            if (existingConnection && existingConnection.isAlive()) {
+                // Reuse existing connection
+                this.client = existingConnection.client;
+                this.currentChannel = existingConnection.currentChannel;
+                this.isConnected = true;
+                this.basePrompt = existingConnection.basePrompt;
+                this.lastActivity = Date.now();
+                return;
             }
-        ];
+        }
+
+        // Use optimized algorithms for faster connection
+        const algorithmConfigs = this.getOptimizedAlgorithms();
 
         for (let i = 0; i < algorithmConfigs.length; i++) {
             try {
                 await this.tryConnect(algorithmConfigs[i]);
+                
+                // Add to connection pool if enabled
+                if (this.connectionPooling) {
+                    const connectionKey = this.getConnectionKey();
+                    BaseConnection.connectionPool.set(connectionKey, this);
+                }
+                
                 return;
             } catch (error) {
                 if (i === algorithmConfigs.length - 1) {
@@ -126,13 +124,20 @@ export class BaseConnection extends EventEmitter {
 
     private async tryConnect(algorithms: any): Promise<void> {
         return new Promise((resolve, reject) => {
+            // Use faster timeout for connection attempts
+            const connectionTimeout = this.fastMode ? 
+                Math.min(this.timeout, 8000) : this.timeout;
+
             const connectConfig: ConnectConfig = {
                 host: this.credentials.host,
                 port: this.credentials.port,
                 username: this.credentials.username,
-                readyTimeout: this.timeout,
-                keepaliveInterval: this.credentials.keepAlive ? 30000 : undefined,
-                algorithms: algorithms
+                readyTimeout: connectionTimeout,
+                keepaliveInterval: this.credentials.keepAlive ? 
+                    (this.fastMode ? 60000 : 30000) : undefined,
+                algorithms: algorithms,
+                // Optimize settings for faster connection
+                hostHash: 'md5'
             };
 
             // Configure authentication method
@@ -153,13 +158,24 @@ export class BaseConnection extends EventEmitter {
                 connectConfig.password = this.credentials.password;
             }
 
+            // Set up timeout for the entire connection process
+            const timeoutId = setTimeout(() => {
+                this.client.removeAllListeners();
+                reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
+            }, connectionTimeout);
+
             this.client.once('ready', () => {
+                clearTimeout(timeoutId);
+                this.lastActivity = Date.now();
                 this.sessionPreparation()
                     .then(() => resolve())
                     .catch(reject);
             });
 
-            this.client.once('error', reject);
+            this.client.once('error', (error) => {
+                clearTimeout(timeoutId);
+                reject(error);
+            });
 
             this.client.connect(connectConfig);
         });
@@ -167,16 +183,39 @@ export class BaseConnection extends EventEmitter {
 
     async disconnect(): Promise<void> {
         return new Promise((resolve) => {
+            // If connection pooling is enabled, don't actually disconnect
+            if (this.connectionPooling && this.isAlive()) {
+                this.lastActivity = Date.now();
+                resolve();
+                return;
+            }
+
+            // Graceful channel closure
             if (this.currentChannel) {
                 this.currentChannel.end();
                 this.currentChannel = null;
             }
 
             if (this.client) {
-                this.client.once('close', () => {
+                // Set a timeout for disconnect operation
+                const disconnectTimeout = setTimeout(() => {
                     this.isConnected = false;
                     resolve();
+                }, this.fastMode ? 2000 : 5000);
+
+                this.client.once('close', () => {
+                    clearTimeout(disconnectTimeout);
+                    this.isConnected = false;
+                    
+                    // Remove from connection pool if it exists
+                    if (this.connectionPooling) {
+                        const connectionKey = this.getConnectionKey();
+                        BaseConnection.connectionPool.delete(connectionKey);
+                    }
+                    
+                    resolve();
                 });
+
                 this.client.end();
             } else {
                 resolve();
@@ -212,7 +251,12 @@ export class BaseConnection extends EventEmitter {
 
                 this.currentChannel = channel;
                 this.currentChannel.setEncoding(this.encoding);
-                resolve();
+                
+                // Reduced wait time for faster channel setup
+                const waitTime = this.fastMode ? 200 : 500;
+                setTimeout(() => {
+                    resolve();
+                }, waitTime);
             });
         });
     }
@@ -365,6 +409,9 @@ export class BaseConnection extends EventEmitter {
             if (!this.isConnected || !this.currentChannel) {
                 throw new Error('Not connected to device');
             }
+
+            // Update activity timestamp for connection pooling
+            this.lastActivity = Date.now();
 
             // Send the command
             await this.writeChannel(command + this.newline);
@@ -597,6 +644,93 @@ export class BaseConnection extends EventEmitter {
             port: this.credentials.port,
             deviceType: this.credentials.deviceType,
             connected: this.isAlive()
+        };
+    }
+
+    private setupConnectionPooling(): void {
+        // Start cleanup interval if not already running
+        if (this.connectionPooling && !BaseConnection.poolCleanupInterval) {
+            BaseConnection.poolCleanupInterval = setInterval(() => {
+                this.cleanupConnectionPool();
+            }, 300000); // Clean up every 5 minutes
+        }
+    }
+
+    private cleanupConnectionPool(): void {
+        const now = Date.now();
+        const maxIdleTime = 600000; // 10 minutes
+
+        for (const [key, connection] of BaseConnection.connectionPool.entries()) {
+            if (now - connection.lastActivity > maxIdleTime) {
+                connection.disconnect();
+                BaseConnection.connectionPool.delete(key);
+            }
+        }
+    }
+
+    private getConnectionKey(): string {
+        return `${this.credentials.host}:${this.credentials.port}:${this.credentials.username}`;
+    }
+
+    // Get optimized SSH algorithms for faster connection
+    private getOptimizedAlgorithms(): any[] {
+        if (this.fastMode) {
+            // Ultra-fast algorithms for speed-critical operations
+            return [
+                {
+                    serverHostKey: ['ssh-rsa', 'ecdsa-sha2-nistp256'],
+                    cipher: ['aes128-ctr', 'aes128-cbc'],
+                    hmac: ['hmac-sha1'],
+                    kex: ['diffie-hellman-group14-sha1', 'ecdh-sha2-nistp256']
+                }
+            ];
+        } else {
+            // Balanced algorithms for reliability and speed
+            return [
+                {
+                    serverHostKey: [
+                        'ssh-rsa', 'rsa-sha2-256', 'ecdsa-sha2-nistp256', 
+                        'ecdsa-sha2-nistp384', 'ssh-ed25519'
+                    ],
+                    cipher: [
+                        'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+                        'aes128-cbc', 'aes192-cbc'
+                    ],
+                    hmac: ['hmac-sha2-256', 'hmac-sha1'],
+                    kex: [
+                        'diffie-hellman-group14-sha256', 'ecdh-sha2-nistp256',
+                        'diffie-hellman-group14-sha1'
+                    ]
+                },
+                // Fallback
+                {
+                    serverHostKey: ['ssh-rsa'],
+                    cipher: ['aes128-cbc'],
+                    hmac: ['hmac-sha1'],
+                    kex: ['diffie-hellman-group1-sha1']
+                }
+            ];
+        }
+    }
+
+    // Static method to force cleanup connection pool
+    static forceCleanupConnectionPool(): void {
+        for (const [key, connection] of BaseConnection.connectionPool.entries()) {
+            connection.disconnect();
+            BaseConnection.connectionPool.delete(key);
+        }
+        
+        if (BaseConnection.poolCleanupInterval) {
+            clearInterval(BaseConnection.poolCleanupInterval);
+            BaseConnection.poolCleanupInterval = null;
+        }
+    }
+
+    // Static method to get connection pool status
+    static getConnectionPoolStatus(): { totalConnections: number; connections: string[] } {
+        return {
+            totalConnections: BaseConnection.connectionPool.size,
+            connections: Array.from(BaseConnection.connectionPool.keys())
         };
     }
 } 

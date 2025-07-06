@@ -38,10 +38,11 @@ export class LinuxConnection extends BaseConnection {
                 this.currentChannel = channel;
                 this.currentChannel.setEncoding(this.encoding);
                 
-                // Wait a bit for the channel to be ready
-                global.setTimeout(() => {
+                // Optimized wait time for faster channel setup
+                const waitTime = this.fastMode ? 150 : 400;
+                setTimeout(() => {
                     resolve();
-                }, 1000);
+                }, waitTime);
             });
         });
     }
