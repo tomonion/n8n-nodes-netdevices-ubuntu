@@ -121,14 +121,21 @@ export class NetDevices implements INodeType {
 				default: {},
 				options: [
 					{
-						displayName: 'Connection Timeout',
-						name: 'connectionTimeout',
+						displayName: 'Auto Disconnect',
+						name: 'autoDisconnect',
+						type: 'boolean',
+						default: true,
+						description: 'Whether to automatically disconnect after command execution',
+					},
+					{
+						displayName: 'Command Retry Count',
+						name: 'commandRetryCount',
 						type: 'number',
-						default: 30,
-						description: 'Timeout for establishing connection in seconds',
+						default: 2,
+						description: 'Number of retry attempts for command failures',
 						typeOptions: {
-							minValue: 5,
-							maxValue: 300,
+							minValue: 1,
+							maxValue: 5,
 						},
 					},
 					{
@@ -143,13 +150,6 @@ export class NetDevices implements INodeType {
 						},
 					},
 					{
-						displayName: 'Auto Disconnect',
-						name: 'autoDisconnect',
-						type: 'boolean',
-						default: true,
-						description: 'Whether to automatically disconnect after command execution',
-					},
-					{
 						displayName: 'Connection Retry Count',
 						name: 'connectionRetryCount',
 						type: 'number',
@@ -161,15 +161,22 @@ export class NetDevices implements INodeType {
 						},
 					},
 					{
-						displayName: 'Command Retry Count',
-						name: 'commandRetryCount',
+						displayName: 'Connection Timeout',
+						name: 'connectionTimeout',
 						type: 'number',
-						default: 2,
-						description: 'Number of retry attempts for command failures',
+						default: 30,
+						description: 'Timeout for establishing connection in seconds',
 						typeOptions: {
-							minValue: 1,
-							maxValue: 5,
+							minValue: 5,
+							maxValue: 300,
 						},
+					},
+					{
+						displayName: 'Fail on Error',
+						name: 'failOnError',
+						type: 'boolean',
+						default: true,
+						description: 'Whether to fail the workflow on command errors (if false, errors are returned as data)',
 					},
 					{
 						displayName: 'Retry Delay',
@@ -181,13 +188,6 @@ export class NetDevices implements INodeType {
 							minValue: 1,
 							maxValue: 30,
 						},
-					},
-					{
-						displayName: 'Fail on Error',
-						name: 'failOnError',
-						type: 'boolean',
-						default: true,
-						description: 'Whether to fail the workflow on command errors (if false, errors are returned as data)',
 					},
 				],
 			},
@@ -280,16 +280,24 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                         switch (operation) {
                             case 'sendCommand':
                                 const command = this.getNodeParameter('command', i) as string;
-                                if (!command) {
-                                    throw new Error('Command parameter is required for sendCommand operation');
-                                }
+                                                                 if (!command) {
+                                     throw new NodeOperationError(
+                                         this.getNode(),
+                                         'Command parameter is required for sendCommand operation',
+                                         { itemIndex: i },
+                                     );
+                                 }
                                 return await connection.sendCommand(command);
 
                             case 'sendConfig':
                                 const configCommands = this.getNodeParameter('configCommands', i) as string;
-                                if (!configCommands) {
-                                    throw new Error('Configuration commands are required for sendConfig operation');
-                                }
+                                                                 if (!configCommands) {
+                                     throw new NodeOperationError(
+                                         this.getNode(),
+                                         'Configuration commands are required for sendConfig operation',
+                                         { itemIndex: i },
+                                     );
+                                 }
                                 const commands = configCommands.split('\n')
                                     .map(cmd => cmd.trim())
                                     .filter(cmd => cmd.length > 0);
@@ -304,8 +312,12 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                             case 'rebootDevice':
                                 return await connection.rebootDevice();
 
-                            default:
-                                throw new Error(`The operation "${operation}" is not supported!`);
+                                                         default:
+                                 throw new NodeOperationError(
+                                     this.getNode(),
+                                     `The operation "${operation}" is not supported!`,
+                                     { itemIndex: i },
+                                 );
                         }
                     };
 
@@ -320,9 +332,13 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                     result = await Promise.race([commandPromise, timeoutPromise]);
                     
                     // Check if command was successful
-                    if (!result.success) {
-                        throw new Error(result.error || 'Command execution failed');
-                    }
+                                         if (!result.success) {
+                         throw new NodeOperationError(
+                             this.getNode(),
+                             result.error || 'Command execution failed',
+                             { itemIndex: i },
+                         );
+                     }
                     
                     commandError = null;
                     break;
