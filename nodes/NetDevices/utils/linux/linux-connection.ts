@@ -1,4 +1,17 @@
 import { BaseConnection, DeviceCredentials, CommandResult } from '../base-connection';
+// Try to import n8n's LoggerProxy for proper logging
+let Logger: any;
+try {
+    Logger = require('n8n-workflow').LoggerProxy;
+} catch (error) {
+    // Fallback to console if LoggerProxy is not available
+    Logger = {
+        debug: (...args: any[]) => console.log('[DEBUG]', ...args),
+        info: (...args: any[]) => console.log('[INFO]', ...args),
+        warn: (...args: any[]) => console.warn('[WARN]', ...args),
+        error: (...args: any[]) => console.error('[ERROR]', ...args)
+    };
+}
 
 export class LinuxConnection extends BaseConnection {
     private shellPrompt: string = '';
@@ -10,31 +23,74 @@ export class LinuxConnection extends BaseConnection {
     }
 
     protected async sessionPreparation(): Promise<void> {
-        // Create shell channel
-        await this.createLinuxShellChannel();
-        
-        // Wait for initial prompt detection
-        await this.waitForInitialPrompt();
-        
-        if (this.fastMode) {
-            // Fast mode: minimal setup
-            await this.setBasePrompt();
-        } else {
-            // Standard mode: full setup
-            await this.setBasePrompt();
+        Logger.debug('Starting Linux session preparation', {
+            host: this.credentials.host,
+            fastMode: this.fastMode
+        });
+
+        try {
+            // Create shell channel with timeout
+            await this.createLinuxShellChannel();
             
-            // Check if we're root user
-            await this.checkRootUser();
+            // Wait for initial prompt detection with shorter timeout
+            await this.waitForInitialPrompt();
             
-            // Set shell options
-            await this.setShellOptions();
+            if (this.fastMode) {
+                // Fast mode: minimal setup with aggressive timeouts
+                Logger.debug('Fast mode: performing minimal session setup');
+                await this.setBasePromptFast();
+            } else {
+                // Standard mode: full setup with optimized timeouts
+                Logger.debug('Standard mode: performing full session setup');
+                await this.setBasePrompt();
+                
+                // Check if we're root user (non-blocking)
+                this.checkRootUser().catch(() => {
+                    Logger.debug('Root user check failed, assuming non-root');
+                    this.rootUser = false;
+                });
+                
+                // Set shell options (non-blocking)
+                this.setShellOptions().catch(() => {
+                    Logger.debug('Shell options setup failed, continuing anyway');
+                });
+            }
+            
+            Logger.debug('Linux session preparation completed successfully');
+        } catch (error) {
+            Logger.error('Linux session preparation failed', {
+                error: error instanceof Error ? error.message : String(error),
+                host: this.credentials.host
+            });
+            throw error;
         }
     }
 
     private async createLinuxShellChannel(): Promise<void> {
         return new Promise((resolve, reject) => {
+            const channelTimeout = this.fastMode ? 3000 : 5000;
+            
+            Logger.debug('Creating Linux shell channel', {
+                timeout: channelTimeout,
+                fastMode: this.fastMode
+            });
+
+            const timeoutId = setTimeout(() => {
+                Logger.error('Shell channel creation timeout', {
+                    timeout: channelTimeout,
+                    host: this.credentials.host
+                });
+                reject(new Error(`Shell channel creation timeout after ${channelTimeout}ms`));
+            }, channelTimeout);
+
             this.client.shell((err, channel) => {
+                clearTimeout(timeoutId);
+                
                 if (err) {
+                    Logger.error('Failed to create shell channel', {
+                        error: err.message,
+                        host: this.credentials.host
+                    });
                     reject(err);
                     return;
                 }
@@ -42,14 +98,20 @@ export class LinuxConnection extends BaseConnection {
                 this.currentChannel = channel;
                 this.currentChannel.setEncoding(this.encoding);
                 
+                Logger.debug('Shell channel created successfully');
+                
                 // Set up data listener for initial prompt detection
                 let initialBuffer = '';
-                const initialPromptTimeout = this.fastMode ? 5000 : 10000;
+                const initialPromptTimeout = this.fastMode ? 2000 : 4000;
                 
                 const initialPromptTimer = setTimeout(() => {
                     if (!this.initialPromptDetected) {
-                        // If no prompt detected, proceed anyway
+                        Logger.debug('Initial prompt timeout, proceeding anyway', {
+                            bufferLength: initialBuffer.length,
+                            bufferSample: initialBuffer.slice(-100)
+                        });
                         this.initialPromptDetected = true;
+                        this.currentChannel.removeListener('data', onInitialData);
                         resolve();
                     }
                 }, initialPromptTimeout);
@@ -57,8 +119,15 @@ export class LinuxConnection extends BaseConnection {
                 const onInitialData = (data: string) => {
                     initialBuffer += data;
                     
+                    Logger.debug('Received initial data', {
+                        dataLength: data.length,
+                        totalBufferLength: initialBuffer.length,
+                        dataSample: data.slice(-50)
+                    });
+                    
                     // Check for various Linux prompt patterns
                     if (this.detectLinuxPrompt(initialBuffer)) {
+                        Logger.debug('Linux prompt detected in initial data');
                         this.initialPromptDetected = true;
                         clearTimeout(initialPromptTimer);
                         this.currentChannel.removeListener('data', onInitialData);
@@ -69,16 +138,16 @@ export class LinuxConnection extends BaseConnection {
                 this.currentChannel.on('data', onInitialData);
                 
                 // Also set a minimum wait time for channel setup
-                const minWaitTime = this.fastMode ? 150 : 400;
+                const minWaitTime = this.fastMode ? 100 : 200;
                 setTimeout(() => {
-                    if (!this.initialPromptDetected) {
-                        // Minimum wait completed, check if we have any data
-                        if (initialBuffer.length > 0) {
-                            this.initialPromptDetected = true;
-                            clearTimeout(initialPromptTimer);
-                            this.currentChannel.removeListener('data', onInitialData);
-                            resolve();
-                        }
+                    if (!this.initialPromptDetected && initialBuffer.length > 0) {
+                        Logger.debug('Minimum wait completed with data, proceeding', {
+                            bufferLength: initialBuffer.length
+                        });
+                        this.initialPromptDetected = true;
+                        clearTimeout(initialPromptTimer);
+                        this.currentChannel.removeListener('data', onInitialData);
+                        resolve();
                     }
                 }, minWaitTime);
             });
@@ -87,16 +156,21 @@ export class LinuxConnection extends BaseConnection {
 
     private async waitForInitialPrompt(): Promise<void> {
         if (this.initialPromptDetected) {
+            Logger.debug('Initial prompt already detected');
             return;
         }
 
-        // Give additional time for prompt detection if needed
+        // Give minimal additional time for prompt detection
+        const waitTime = this.fastMode ? 500 : 1000;
+        
+        Logger.debug('Waiting for initial prompt', { waitTime });
+        
         return new Promise((resolve) => {
-            const timeout = this.fastMode ? 2000 : 4000;
             setTimeout(() => {
+                Logger.debug('Initial prompt wait completed');
                 this.initialPromptDetected = true;
                 resolve();
-            }, timeout);
+            }, waitTime);
         });
     }
 
@@ -458,5 +532,32 @@ export class LinuxConnection extends BaseConnection {
 
     async restartService(serviceName: string): Promise<CommandResult> {
         return await this.executeAsRoot(`systemctl restart ${serviceName}`);
+    }
+
+    private async setBasePromptFast(): Promise<void> {
+        try {
+            Logger.debug('Setting base prompt in fast mode');
+            
+            // In fast mode, use a very short timeout for prompt detection
+            await this.writeChannel(this.returnChar);
+            const output = await this.readChannel(1500); // Reduced timeout
+            
+            if (output.trim()) {
+                this.extractPromptFromOutput(output);
+                Logger.debug('Fast prompt detection successful', {
+                    basePrompt: this.basePrompt,
+                    shellPrompt: this.shellPrompt
+                });
+            } else {
+                // Use fallback immediately in fast mode
+                this.setFallbackPrompt();
+                Logger.debug('Using fallback prompt in fast mode');
+            }
+        } catch (error) {
+            Logger.debug('Fast prompt detection failed, using fallback', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            this.setFallbackPrompt();
+        }
     }
 } 

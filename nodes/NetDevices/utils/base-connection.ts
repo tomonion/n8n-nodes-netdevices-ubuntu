@@ -45,7 +45,7 @@ export class BaseConnection extends EventEmitter {
     protected client: Client;
     protected credentials: DeviceCredentials;
     protected isConnected: boolean = false;
-    protected currentChannel: any = null;
+    protected currentChannel: any;
     protected basePrompt: string = '';
     protected enabledPrompt: string = '';
     protected configPrompt: string = '';
@@ -57,21 +57,23 @@ export class BaseConnection extends EventEmitter {
     protected commandTimeout: number = 8000;
     protected reuseConnection: boolean = false;
     protected connectionPooling: boolean = false;
-    protected lastActivity: number = Date.now();
+    protected lastActivity: number = 0;
+    protected lastSuccessfulAlgorithmIndex: number = 0;
 
     // Static connection pool for reusing connections
     private static connectionPool: Map<string, BaseConnection> = new Map();
     private static poolCleanupInterval: NodeJS.Timeout | null = null;
 
-    constructor(credentials: DeviceCredentials) {
+    constructor(credentials: DeviceCredentials, fastMode: boolean = false, connectionPooling: boolean = false, reuseConnection: boolean = false) {
         super();
         this.credentials = credentials;
+        this.fastMode = fastMode;
+        this.connectionPooling = connectionPooling;
+        this.reuseConnection = reuseConnection;
+        this.timeout = (credentials.timeout || 10) * 1000;
+        this.lastActivity = Date.now();
+        this.currentChannel = null;
         this.client = new Client();
-        this.timeout = credentials.timeout || 10000;
-        this.fastMode = credentials.fastMode || false;
-        this.commandTimeout = credentials.commandTimeout || 8000;
-        this.reuseConnection = credentials.reuseConnection || false;
-        this.connectionPooling = credentials.connectionPooling || false;
         this.setupEventHandlers();
         this.setupConnectionPooling();
     }
@@ -105,84 +107,40 @@ export class BaseConnection extends EventEmitter {
             username: this.credentials.username,
             authMethod: this.credentials.authMethod,
             deviceType: this.credentials.deviceType,
-            timeout: this.timeout,
+            timeout: (this.credentials.timeout || 10) * 1000,
             fastMode: this.fastMode,
             hasPrivateKey: !!this.credentials.privateKey,
             hasPassphrase: !!this.credentials.passphrase,
             hasPassword: !!this.credentials.password
         });
 
-        // Check for existing connection in pool
-        if (this.connectionPooling || this.reuseConnection) {
-            const connectionKey = this.getConnectionKey();
-            const existingConnection = BaseConnection.connectionPool.get(connectionKey);
-            
-            if (existingConnection && existingConnection.isAlive()) {
-                Logger.debug('Reusing existing connection from pool', { connectionKey });
-                // Reuse existing connection
-                this.client = existingConnection.client;
-                this.currentChannel = existingConnection.currentChannel;
-                this.isConnected = true;
-                this.basePrompt = existingConnection.basePrompt;
-                this.lastActivity = Date.now();
-                return;
-            }
-        }
+        try {
+            // Validate credentials first
+            this.validateCredentials();
 
-        // Validate credentials before attempting connection
-        this.validateCredentials();
+            // Try to connect with different algorithm configurations
+            await this.tryConnect();
 
-        // Use optimized algorithms for faster connection
-        const algorithmConfigs = this.getOptimizedAlgorithms();
-        Logger.debug('Trying SSH connection with algorithm configurations', {
-            algorithmCount: algorithmConfigs.length,
-            authMethod: this.credentials.authMethod
-        });
+            // Session preparation with separate timeout
+            await this.sessionPreparationWithTimeout();
 
-        for (let i = 0; i < algorithmConfigs.length; i++) {
-            try {
-                Logger.debug(`Attempting connection with algorithm config ${i + 1}/${algorithmConfigs.length}`, {
-                    algorithms: algorithmConfigs[i]
-                });
-                
-                await this.tryConnect(algorithmConfigs[i]);
-                
-                Logger.info('SSH connection established successfully', {
-                    host: this.credentials.host,
-                    port: this.credentials.port,
-                    username: this.credentials.username,
-                    authMethod: this.credentials.authMethod,
-                    algorithmIndex: i + 1
-                });
-                
-                // Add to connection pool if enabled
-                if (this.connectionPooling) {
-                    const connectionKey = this.getConnectionKey();
-                    BaseConnection.connectionPool.set(connectionKey, this);
-                    Logger.debug('Added connection to pool', { connectionKey });
-                }
-                
-                return;
-            } catch (error) {
-                Logger.warn(`Connection attempt ${i + 1}/${algorithmConfigs.length} failed`, {
-                    error: error instanceof Error ? error.message : String(error),
-                    host: this.credentials.host,
-                    port: this.credentials.port,
-                    authMethod: this.credentials.authMethod
-                });
-                
-                if (i === algorithmConfigs.length - 1) {
-                    Logger.error('All connection attempts failed', {
-                        host: this.credentials.host,
-                        port: this.credentials.port,
-                        username: this.credentials.username,
-                        authMethod: this.credentials.authMethod,
-                        finalError: error instanceof Error ? error.message : String(error)
-                    });
-                    throw error;
-                }
-                // Continue to next algorithm configuration
-            }
+            Logger.info('SSH connection established successfully', {
+                host: this.credentials.host,
+                port: this.credentials.port,
+                username: this.credentials.username,
+                authMethod: this.credentials.authMethod,
+                algorithmIndex: this.lastSuccessfulAlgorithmIndex
+            });
+
+        } catch (error) {
+            Logger.error('SSH connection failed', {
+                host: this.credentials.host,
+                port: this.credentials.port,
+                username: this.credentials.username,
+                authMethod: this.credentials.authMethod,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            throw error;
         }
     }
 
@@ -232,7 +190,63 @@ export class BaseConnection extends EventEmitter {
         }
     }
 
-    private async tryConnect(algorithms: any): Promise<void> {
+    private async tryConnect(): Promise<void> {
+        // Use optimized algorithms for faster connection
+        const algorithmConfigs = this.getOptimizedAlgorithms();
+        Logger.debug('Trying SSH connection with algorithm configurations', {
+            algorithmCount: algorithmConfigs.length,
+            authMethod: this.credentials.authMethod
+        });
+
+        for (let i = 0; i < algorithmConfigs.length; i++) {
+            try {
+                Logger.debug(`Attempting connection with algorithm config ${i + 1}/${algorithmConfigs.length}`, {
+                    algorithms: algorithmConfigs[i]
+                });
+                
+                await this.tryConnectWithConfig(algorithmConfigs[i]);
+                
+                Logger.info('SSH connection established successfully', {
+                    host: this.credentials.host,
+                    port: this.credentials.port,
+                    username: this.credentials.username,
+                    authMethod: this.credentials.authMethod,
+                    algorithmIndex: i + 1
+                });
+                
+                // Add to connection pool if enabled
+                if (this.connectionPooling) {
+                    const connectionKey = this.getConnectionKey();
+                    BaseConnection.connectionPool.set(connectionKey, this);
+                    Logger.debug('Added connection to pool', { connectionKey });
+                }
+                
+                this.lastSuccessfulAlgorithmIndex = i;
+                return;
+            } catch (error) {
+                Logger.warn(`Connection attempt ${i + 1}/${algorithmConfigs.length} failed`, {
+                    error: error instanceof Error ? error.message : String(error),
+                    host: this.credentials.host,
+                    port: this.credentials.port,
+                    authMethod: this.credentials.authMethod
+                });
+                
+                if (i === algorithmConfigs.length - 1) {
+                    Logger.error('All connection attempts failed', {
+                        host: this.credentials.host,
+                        port: this.credentials.port,
+                        username: this.credentials.username,
+                        authMethod: this.credentials.authMethod,
+                        finalError: error instanceof Error ? error.message : String(error)
+                    });
+                    throw error;
+                }
+                // Continue to next algorithm configuration
+            }
+        }
+    }
+
+    private async tryConnectWithConfig(algorithms: any): Promise<void> {
         return new Promise((resolve, reject) => {
             // Use faster timeout for connection attempts
             const connectionTimeout = this.fastMode ? 
@@ -1034,5 +1048,38 @@ export class BaseConnection extends EventEmitter {
             totalConnections: BaseConnection.connectionPool.size,
             connections: Array.from(BaseConnection.connectionPool.keys())
         };
+    }
+
+    private async sessionPreparationWithTimeout(): Promise<void> {
+        const sessionTimeout = this.fastMode ? 5000 : 10000; // Separate timeout for session prep
+        
+        Logger.debug('Starting session preparation with timeout', {
+            timeout: sessionTimeout,
+            fastMode: this.fastMode
+        });
+
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                Logger.error('Session preparation timeout', {
+                    timeout: sessionTimeout,
+                    host: this.credentials.host
+                });
+                reject(new Error(`Session preparation timeout after ${sessionTimeout}ms`));
+            }, sessionTimeout);
+
+            this.sessionPreparation()
+                .then(() => {
+                    clearTimeout(timeoutId);
+                    Logger.debug('Session preparation completed successfully');
+                    resolve();
+                })
+                .catch((error) => {
+                    clearTimeout(timeoutId);
+                    Logger.error('Session preparation failed', {
+                        error: error instanceof Error ? error.message : String(error)
+                    });
+                    reject(error);
+                });
+        });
     }
 } 
