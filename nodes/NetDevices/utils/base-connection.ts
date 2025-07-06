@@ -5,7 +5,10 @@ export interface DeviceCredentials {
     host: string;
     port: number;
     username: string;
-    password: string;
+    password?: string;
+    authMethod: 'password' | 'privateKey';
+    privateKey?: string;
+    passphrase?: string;
     deviceType: string;
     timeout?: number;
     keepAlive?: boolean;
@@ -121,11 +124,28 @@ export class BaseConnection extends EventEmitter {
                 host: this.credentials.host,
                 port: this.credentials.port,
                 username: this.credentials.username,
-                password: this.credentials.password,
                 readyTimeout: this.timeout,
                 keepaliveInterval: this.credentials.keepAlive ? 30000 : undefined,
                 algorithms: algorithms
             };
+
+            // Configure authentication method
+            if (this.credentials.authMethod === 'privateKey') {
+                if (!this.credentials.privateKey) {
+                    reject(new Error('SSH private key is required for private key authentication'));
+                    return;
+                }
+                connectConfig.privateKey = this.credentials.privateKey;
+                if (this.credentials.passphrase) {
+                    connectConfig.passphrase = this.credentials.passphrase;
+                }
+            } else {
+                if (!this.credentials.password) {
+                    reject(new Error('Password is required for password authentication'));
+                    return;
+                }
+                connectConfig.password = this.credentials.password;
+            }
 
             this.client.once('ready', () => {
                 this.sessionPreparation()

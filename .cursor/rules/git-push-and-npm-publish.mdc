@@ -4,6 +4,9 @@ globs:
 alwaysApply: true
 ---
 When the user says git push and publish, perform the following actions in order:
-	1.	Increment the patch version in package.json (i.e., use npm version patch).
-	2.	Push the updated version tag to Git (git push && git push --tags).
-	3.	Publish the package to npm (npm publish).
+	1.	Ensure there are no linting errors (e.g., run npm run lint and confirm it passes).
+	2.	Build the project using npm run build.
+	3.	Commit any pending changes and push to the main branch.
+	4.	Increment the patch version in package.json using npm version patch.
+	5.	Push commits and tags to Git: git push && git push --tags.
+	6.	Publish the package to npm using npm publish.

@@ -7,7 +7,7 @@ export class CiscoConnection extends BaseConnection {
 
     constructor(credentials: DeviceCredentials & { enablePassword?: string }) {
         super(credentials);
-        this.enablePassword = credentials.enablePassword || credentials.password;
+        this.enablePassword = credentials.enablePassword || credentials.password || '';
     }
 
     protected async sessionPreparation(): Promise<void> {

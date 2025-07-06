@@ -222,11 +222,21 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                 host: credentials.host as string,
                 port: credentials.port as number,
                 username: credentials.username as string,
-                password: credentials.password as string,
+                authMethod: (credentials.authMethod as 'password' | 'privateKey') || 'password',
                 deviceType: credentials.deviceType as string,
                 timeout: connectionTimeout,
                 keepAlive: credentials.keepAlive as boolean,
             };
+
+            // Add authentication-specific fields
+            if (deviceCredentials.authMethod === 'privateKey') {
+                deviceCredentials.privateKey = credentials.privateKey as string;
+                if (credentials.passphrase) {
+                    deviceCredentials.passphrase = credentials.passphrase as string;
+                }
+            } else {
+                deviceCredentials.password = credentials.password as string;
+            }
 
             // Add enable password for Cisco devices
             if (credentials.enablePassword) {

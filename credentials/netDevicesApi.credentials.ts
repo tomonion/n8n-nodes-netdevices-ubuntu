@@ -33,13 +33,67 @@ export class NetDevicesApi implements ICredentialType {
 			description: 'The username for SSH authentication',
 		},
 		{
+			displayName: 'Authentication Method',
+			name: 'authMethod',
+			type: 'options',
+			options: [
+				{
+					name: 'Password',
+					value: 'password',
+				},
+				{
+					name: 'SSH Private Key',
+					value: 'privateKey',
+				},
+			],
+			default: 'password',
+			required: true,
+			description: 'The authentication method to use for SSH connection',
+		},
+		{
 			displayName: 'Password',
 			name: 'password',
 			type: 'string',
 			typeOptions: { password: true },
 			default: '',
 			required: true,
+			displayOptions: {
+				show: {
+					authMethod: ['password'],
+				},
+			},
 			description: 'The password for SSH authentication',
+		},
+		{
+			displayName: 'SSH Private Key',
+			name: 'privateKey',
+			type: 'string',
+			typeOptions: { 
+				password: true,
+				rows: 5,
+			},
+			default: '',
+			required: true,
+			displayOptions: {
+				show: {
+					authMethod: ['privateKey'],
+				},
+			},
+			description: 'The complete SSH private key content (paste the entire key including -----BEGIN and -----END lines)',
+		},
+		{
+			displayName: 'Private Key Passphrase',
+			name: 'passphrase',
+			type: 'string',
+			typeOptions: { password: true },
+			default: '',
+			required: false,
+			displayOptions: {
+				show: {
+					authMethod: ['privateKey'],
+				},
+			},
+			description: 'The passphrase for the SSH private key (leave empty if no passphrase)',
 		},
 		{
 			displayName: 'Device Type',

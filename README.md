@@ -6,6 +6,7 @@ A TypeScript-based n8n custom node that provides Netmiko-like functionality for 
 
 - **Multi-vendor support**: Cisco IOS/IOS-XE/NX-OS/ASA, Juniper JunOS/SRX, and Linux servers
 - **Secure SSH connections**: Uses the ssh2 library for reliable and secure connections
+- **Dual authentication methods**: Support for both password and SSH key-based authentication
 - **Vendor-specific handling**: Automatically handles device-specific behaviors like enable mode, configuration mode, and command prompts
 - **TypeScript implementation**: Full TypeScript support with proper typing and error handling
 - **Modular architecture**: Clean separation between base functionality and vendor-specific implementations
@@ -72,11 +73,23 @@ The node uses the "Net Devices API" credential type with the following fields:
 - **Hostname/IP**: The IP address or hostname of the device
 - **Port**: SSH port (default: 22)
 - **Username**: SSH username
-- **Password**: SSH password
+- **Authentication Method**: Choose between "Password" or "SSH Private Key"
+- **Password**: SSH password (when using password authentication)
+- **SSH Private Key**: Complete SSH private key content (when using key authentication)
+- **Private Key Passphrase**: Optional passphrase for encrypted private keys
 - **Device Type**: Select from supported device types
 - **Enable Password**: (Cisco only) Password for privileged mode
 - **Connection Timeout**: Connection timeout in seconds
 - **Keep Alive**: Whether to send keep-alive packets
+
+#### SSH Key Authentication
+The node supports SSH key-based authentication as an alternative to password authentication:
+- **Enhanced Security**: No passwords transmitted over the network
+- **Key Formats**: Supports RSA, DSA, ECDSA, Ed25519, and OpenSSH format keys
+- **Passphrase Support**: Optional passphrase protection for encrypted keys
+- **Content-Based**: Paste the complete private key content (no file paths)
+
+For detailed SSH key setup instructions, see [SSH_KEY_AUTH_GUIDE.md](SSH_KEY_AUTH_GUIDE.md).
 
 ### Advanced Options
 - **Command Timeout**: Timeout for individual commands
