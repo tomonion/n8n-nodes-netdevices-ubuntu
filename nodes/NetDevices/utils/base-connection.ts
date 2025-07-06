@@ -1,6 +1,22 @@
 import { Client, ConnectConfig } from 'ssh2';
 import { EventEmitter } from 'events';
 
+// Add logging support
+let Logger: any;
+try {
+    // Try to import n8n's LoggerProxy for proper logging
+    const { LoggerProxy } = require('n8n-workflow');
+    Logger = LoggerProxy;
+} catch (error) {
+    // Fallback to console logging if n8n LoggerProxy is not available
+    Logger = {
+        debug: console.log,
+        info: console.log,
+        warn: console.warn,
+        error: console.error
+    };
+}
+
 export interface DeviceCredentials {
     host: string;
     port: number;
@@ -83,12 +99,26 @@ export class BaseConnection extends EventEmitter {
     }
 
     async connect(): Promise<void> {
+        Logger.debug('Starting SSH connection process', {
+            host: this.credentials.host,
+            port: this.credentials.port,
+            username: this.credentials.username,
+            authMethod: this.credentials.authMethod,
+            deviceType: this.credentials.deviceType,
+            timeout: this.timeout,
+            fastMode: this.fastMode,
+            hasPrivateKey: !!this.credentials.privateKey,
+            hasPassphrase: !!this.credentials.passphrase,
+            hasPassword: !!this.credentials.password
+        });
+
         // Check for existing connection in pool
         if (this.connectionPooling || this.reuseConnection) {
             const connectionKey = this.getConnectionKey();
             const existingConnection = BaseConnection.connectionPool.get(connectionKey);
             
             if (existingConnection && existingConnection.isAlive()) {
+                Logger.debug('Reusing existing connection from pool', { connectionKey });
                 // Reuse existing connection
                 this.client = existingConnection.client;
                 this.currentChannel = existingConnection.currentChannel;
@@ -99,26 +129,106 @@ export class BaseConnection extends EventEmitter {
             }
         }
 
+        // Validate credentials before attempting connection
+        this.validateCredentials();
+
         // Use optimized algorithms for faster connection
         const algorithmConfigs = this.getOptimizedAlgorithms();
+        Logger.debug('Trying SSH connection with algorithm configurations', {
+            algorithmCount: algorithmConfigs.length,
+            authMethod: this.credentials.authMethod
+        });
 
         for (let i = 0; i < algorithmConfigs.length; i++) {
             try {
+                Logger.debug(`Attempting connection with algorithm config ${i + 1}/${algorithmConfigs.length}`, {
+                    algorithms: algorithmConfigs[i]
+                });
+                
                 await this.tryConnect(algorithmConfigs[i]);
+                
+                Logger.info('SSH connection established successfully', {
+                    host: this.credentials.host,
+                    port: this.credentials.port,
+                    username: this.credentials.username,
+                    authMethod: this.credentials.authMethod,
+                    algorithmIndex: i + 1
+                });
                 
                 // Add to connection pool if enabled
                 if (this.connectionPooling) {
                     const connectionKey = this.getConnectionKey();
                     BaseConnection.connectionPool.set(connectionKey, this);
+                    Logger.debug('Added connection to pool', { connectionKey });
                 }
                 
                 return;
             } catch (error) {
+                Logger.warn(`Connection attempt ${i + 1}/${algorithmConfigs.length} failed`, {
+                    error: error instanceof Error ? error.message : String(error),
+                    host: this.credentials.host,
+                    port: this.credentials.port,
+                    authMethod: this.credentials.authMethod
+                });
+                
                 if (i === algorithmConfigs.length - 1) {
+                    Logger.error('All connection attempts failed', {
+                        host: this.credentials.host,
+                        port: this.credentials.port,
+                        username: this.credentials.username,
+                        authMethod: this.credentials.authMethod,
+                        finalError: error instanceof Error ? error.message : String(error)
+                    });
                     throw error;
                 }
                 // Continue to next algorithm configuration
             }
+        }
+    }
+
+    private validateCredentials(): void {
+        Logger.debug('Validating credentials', {
+            host: this.credentials.host,
+            port: this.credentials.port,
+            username: this.credentials.username,
+            authMethod: this.credentials.authMethod
+        });
+
+        if (!this.credentials.host) {
+            throw new Error('Host is required for SSH connection');
+        }
+
+        if (!this.credentials.username) {
+            throw new Error('Username is required for SSH connection');
+        }
+
+        if (this.credentials.authMethod === 'privateKey') {
+            if (!this.credentials.privateKey) {
+                throw new Error('SSH private key is required for private key authentication');
+            }
+            
+            // Check if private key looks valid
+            if (!this.credentials.privateKey.includes('-----BEGIN') || 
+                !this.credentials.privateKey.includes('-----END')) {
+                Logger.warn('Private key may not be in correct format', {
+                    keyLength: this.credentials.privateKey.length,
+                    hasBeginMarker: this.credentials.privateKey.includes('-----BEGIN'),
+                    hasEndMarker: this.credentials.privateKey.includes('-----END')
+                });
+            }
+            
+            Logger.debug('Private key validation passed', {
+                keyLength: this.credentials.privateKey.length,
+                hasPassphrase: !!this.credentials.passphrase,
+                passphraseLength: this.credentials.passphrase ? this.credentials.passphrase.length : 0
+            });
+        } else {
+            if (!this.credentials.password) {
+                throw new Error('Password is required for password authentication');
+            }
+            Logger.debug('Password authentication validation passed', {
+                passwordLength: this.credentials.password.length
+            });
         }
     }
 
@@ -127,6 +237,15 @@ export class BaseConnection extends EventEmitter {
             // Use faster timeout for connection attempts
             const connectionTimeout = this.fastMode ? 
                 Math.min(this.timeout, 8000) : this.timeout;
+
+            Logger.debug('Preparing SSH connection configuration', {
+                host: this.credentials.host,
+                port: this.credentials.port,
+                username: this.credentials.username,
+                connectionTimeout,
+                authMethod: this.credentials.authMethod,
+                algorithms
+            });
 
             const connectConfig: ConnectConfig = {
                 host: this.credentials.host,
@@ -139,64 +258,158 @@ export class BaseConnection extends EventEmitter {
                 // Optimize settings for faster connection
                 hostHash: 'md5',
                 // Add debug option for troubleshooting
-                debug: process.env.SSH_DEBUG === 'true' ? console.log : undefined
+                debug: process.env.SSH_DEBUG === 'true' ? 
+                    (msg: string) => Logger.debug('SSH2 Debug: ' + msg) : undefined
             };
 
             // Configure authentication method
             if (this.credentials.authMethod === 'privateKey') {
                 if (!this.credentials.privateKey) {
+                    Logger.error('SSH private key is missing for private key authentication');
                     reject(new Error('SSH private key is required for private key authentication'));
                     return;
                 }
                 connectConfig.privateKey = this.credentials.privateKey;
-                if (this.credentials.passphrase) {
+                
+                // Handle passphrase - only add if it's not empty
+                if (this.credentials.passphrase && this.credentials.passphrase.trim() !== '') {
                     connectConfig.passphrase = this.credentials.passphrase;
+                    Logger.debug('Using passphrase for private key', {
+                        passphraseLength: this.credentials.passphrase.length
+                    });
+                } else {
+                    Logger.debug('No passphrase provided for private key');
                 }
+                
                 // For key-based auth, try to disable password auth to avoid prompts
                 connectConfig.tryKeyboard = false;
+                
+                Logger.debug('Configured SSH private key authentication', {
+                    keyLength: this.credentials.privateKey.length,
+                    hasPassphrase: !!connectConfig.passphrase,
+                    tryKeyboard: connectConfig.tryKeyboard
+                });
             } else {
                 if (!this.credentials.password) {
+                    Logger.error('Password is missing for password authentication');
                     reject(new Error('Password is required for password authentication'));
                     return;
                 }
                 connectConfig.password = this.credentials.password;
+                
+                Logger.debug('Configured SSH password authentication', {
+                    passwordLength: this.credentials.password.length
+                });
             }
 
             // Set up timeout for the entire connection process
             const timeoutId = setTimeout(() => {
+                Logger.error('SSH connection timeout reached', {
+                    host: this.credentials.host,
+                    port: this.credentials.port,
+                    timeout: connectionTimeout,
+                    authMethod: this.credentials.authMethod
+                });
                 this.client.removeAllListeners();
                 reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
             }, connectionTimeout);
 
             // Handle connection events
             this.client.once('ready', () => {
+                Logger.info('SSH connection ready', {
+                    host: this.credentials.host,
+                    port: this.credentials.port,
+                    username: this.credentials.username,
+                    authMethod: this.credentials.authMethod
+                });
+                
                 clearTimeout(timeoutId);
                 this.lastActivity = Date.now();
                 this.isConnected = true;
                 this.sessionPreparation()
-                    .then(() => resolve())
-                    .catch(reject);
+                    .then(() => {
+                        Logger.debug('Session preparation completed successfully');
+                        resolve();
+                    })
+                    .catch((error) => {
+                        Logger.error('Session preparation failed', {
+                            error: error instanceof Error ? error.message : String(error),
+                            host: this.credentials.host
+                        });
+                        reject(error);
+                    });
             });
 
             this.client.once('error', (error) => {
+                Logger.error('SSH connection error', {
+                    error: error.message,
+                    host: this.credentials.host,
+                    port: this.credentials.port,
+                    username: this.credentials.username,
+                    authMethod: this.credentials.authMethod,
+                    level: error.level || 'unknown'
+                });
+                
                 clearTimeout(timeoutId);
-                reject(error);
+                
+                // Provide more specific error messages for common issues
+                let enhancedError = error;
+                if (error.message.includes('All configured authentication methods failed')) {
+                    enhancedError = new Error(`Authentication failed: ${error.message}. Please check your ${this.credentials.authMethod === 'privateKey' ? 'SSH private key and passphrase' : 'password'}.`);
+                } else if (error.message.includes('connect ECONNREFUSED')) {
+                    enhancedError = new Error(`Connection refused: Cannot connect to ${this.credentials.host}:${this.credentials.port}. Please check if SSH service is running and the host/port are correct.`);
+                } else if (error.message.includes('connect ETIMEDOUT')) {
+                    enhancedError = new Error(`Connection timed out: Cannot reach ${this.credentials.host}:${this.credentials.port}. Please check network connectivity and firewall settings.`);
+                } else if (error.message.includes('getaddrinfo ENOTFOUND')) {
+                    enhancedError = new Error(`Host not found: Cannot resolve hostname ${this.credentials.host}. Please check the hostname or IP address.`);
+                }
+                
+                reject(enhancedError);
             });
 
             // Handle keyboard-interactive authentication for some servers
             this.client.once('keyboard-interactive', (name, instructions, instructionsLang, prompts, finish) => {
+                Logger.debug('Received keyboard-interactive authentication request', {
+                    name,
+                    instructions,
+                    promptCount: prompts.length,
+                    authMethod: this.credentials.authMethod
+                });
+                
                 if (this.credentials.authMethod === 'password' && this.credentials.password) {
+                    Logger.debug('Responding to keyboard-interactive with password');
                     // Respond to keyboard-interactive with password
                     finish([this.credentials.password]);
                 } else {
+                    Logger.warn('Rejecting keyboard-interactive authentication for key-based auth');
                     // Reject keyboard-interactive if using key auth
                     finish([]);
                 }
             });
 
+            // Handle banner messages
+            this.client.once('banner', (message) => {
+                Logger.debug('Received SSH banner', {
+                    banner: message.trim(),
+                    host: this.credentials.host
+                });
+            });
+
             try {
+                Logger.debug('Initiating SSH connection', {
+                    host: this.credentials.host,
+                    port: this.credentials.port,
+                    username: this.credentials.username
+                });
+                
                 this.client.connect(connectConfig);
             } catch (error) {
+                Logger.error('Failed to initiate SSH connection', {
+                    error: error instanceof Error ? error.message : String(error),
+                    host: this.credentials.host,
+                    port: this.credentials.port
+                });
+                
                 clearTimeout(timeoutId);
                 reject(error);
             }

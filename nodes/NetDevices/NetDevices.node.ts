@@ -7,7 +7,23 @@ import type {
 } from 'n8n-workflow';
 
 import { NodeOperationError } from 'n8n-workflow';
-import { ConnectHandler, CommandResult } from './utils';
+import { ConnectHandler, CommandResult } from './utils/index';
+
+// Add logging support
+let Logger: any;
+try {
+    // Try to import n8n's LoggerProxy for proper logging
+    const { LoggerProxy } = require('n8n-workflow');
+    Logger = LoggerProxy;
+} catch (error) {
+    // Fallback to console logging if n8n LoggerProxy is not available
+    Logger = {
+        debug: console.log,
+        info: console.log,
+        warn: console.warn,
+        error: console.error
+    };
+}
 
 export class NetDevices implements INodeType {
     description: INodeTypeDescription = {
@@ -222,6 +238,20 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
     const credentials = await this.getCredentials('netDevicesApi');
     const operation = this.getNodeParameter('operation', 0);
 
+    Logger.debug('NetDevices node execution started', {
+        operation,
+        itemCount: items.length,
+        host: credentials.host,
+        username: credentials.username,
+        authMethod: credentials.authMethod,
+        deviceType: credentials.deviceType,
+        hasPassword: !!credentials.password,
+        hasPrivateKey: !!credentials.privateKey,
+        hasPassphrase: !!credentials.passphrase,
+        passphraseValue: credentials.passphrase ? `"${credentials.passphrase}"` : 'undefined',
+        passphraseLength: credentials.passphrase ? String(credentials.passphrase).length : 0
+    });
+
     for (let i = 0; i < items.length; i++) {
         const startTime = Date.now();
         let connection: any = null;
@@ -238,18 +268,28 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
         const fastMode = (advancedOptions.fastMode as boolean) || false;
         const connectionPooling = (advancedOptions.connectionPooling as boolean) || false;
         const reuseConnection = (advancedOptions.reuseConnection as boolean) || false;
+
+        Logger.debug('Processing item with advanced options', {
+            itemIndex: i,
+            operation,
+            autoDisconnect,
+            connectionRetryCount,
+            commandRetryCount,
+            connectionTimeout: connectionTimeout / 1000,
+            commandTimeout: commandTimeout / 1000,
+            fastMode,
+            connectionPooling,
+            reuseConnection
+        });
         
         try {
 
             // Configure device credentials with optimization options
-            const deviceCredentials = {
+            const deviceCredentials: any = {
                 host: credentials.host as string,
                 port: credentials.port as number,
                 username: credentials.username as string,
-                password: credentials.password as string,
                 authMethod: credentials.authMethod as 'password' | 'privateKey',
-                privateKey: credentials.privateKey as string,
-                passphrase: credentials.passphrase as string,
                 deviceType: credentials.deviceType as string,
                 timeout: connectionTimeout,
                 keepAlive: true,
@@ -259,20 +299,39 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                 reuseConnection: reuseConnection,
             };
 
-            // Add authentication-specific fields
+            // Add authentication-specific fields based on method
             if (deviceCredentials.authMethod === 'privateKey') {
                 deviceCredentials.privateKey = credentials.privateKey as string;
-                if (credentials.passphrase) {
+                // Only set passphrase if it's not empty or undefined
+                if (credentials.passphrase && String(credentials.passphrase).trim() !== '') {
                     deviceCredentials.passphrase = credentials.passphrase as string;
                 }
+                // Don't set password for key auth
             } else {
                 deviceCredentials.password = credentials.password as string;
+                // Don't set privateKey or passphrase for password auth
             }
 
             // Add enable password for Cisco devices
             if (credentials.enablePassword) {
                 (deviceCredentials as any).enablePassword = credentials.enablePassword;
             }
+
+            Logger.debug('Configured device credentials', {
+                host: deviceCredentials.host,
+                port: deviceCredentials.port,
+                username: deviceCredentials.username,
+                authMethod: deviceCredentials.authMethod,
+                deviceType: deviceCredentials.deviceType,
+                hasPassword: !!deviceCredentials.password,
+                hasPrivateKey: !!deviceCredentials.privateKey,
+                hasPassphrase: !!deviceCredentials.passphrase,
+                passphraseLength: deviceCredentials.passphrase ? deviceCredentials.passphrase.length : 0,
+                timeout: deviceCredentials.timeout / 1000,
+                fastMode: deviceCredentials.fastMode,
+                connectionPooling: deviceCredentials.connectionPooling,
+                reuseConnection: deviceCredentials.reuseConnection
+            });
 
             // Connection with retry logic and timeout
             let connectionError: Error | null = null;
