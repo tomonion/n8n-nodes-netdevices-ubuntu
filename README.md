@@ -91,6 +91,9 @@ The node supports SSH key-based authentication as an alternative to password aut
 
 For detailed SSH key setup instructions, see [SSH_KEY_AUTH_GUIDE.md](SSH_KEY_AUTH_GUIDE.md).
 
+### Troubleshooting SSH Timeouts
+If you experience SSH timeout issues, especially with Linux servers or SSH key authentication, see the comprehensive troubleshooting guide: [SSH_TIMEOUT_TROUBLESHOOTING.md](SSH_TIMEOUT_TROUBLESHOOTING.md).
+
 ## Performance Optimization
 
 The NetDevices node has been optimized for faster command execution and connection management:

@@ -137,7 +137,9 @@ export class BaseConnection extends EventEmitter {
                     (this.fastMode ? 60000 : 30000) : undefined,
                 algorithms: algorithms,
                 // Optimize settings for faster connection
-                hostHash: 'md5'
+                hostHash: 'md5',
+                // Add debug option for troubleshooting
+                debug: process.env.SSH_DEBUG === 'true' ? console.log : undefined
             };
 
             // Configure authentication method
@@ -150,6 +152,8 @@ export class BaseConnection extends EventEmitter {
                 if (this.credentials.passphrase) {
                     connectConfig.passphrase = this.credentials.passphrase;
                 }
+                // For key-based auth, try to disable password auth to avoid prompts
+                connectConfig.tryKeyboard = false;
             } else {
                 if (!this.credentials.password) {
                     reject(new Error('Password is required for password authentication'));
@@ -164,9 +168,11 @@ export class BaseConnection extends EventEmitter {
                 reject(new Error(`Connection timeout after ${connectionTimeout}ms`));
             }, connectionTimeout);
 
+            // Handle connection events
             this.client.once('ready', () => {
                 clearTimeout(timeoutId);
                 this.lastActivity = Date.now();
+                this.isConnected = true;
                 this.sessionPreparation()
                     .then(() => resolve())
                     .catch(reject);
@@ -177,7 +183,23 @@ export class BaseConnection extends EventEmitter {
                 reject(error);
             });
 
-            this.client.connect(connectConfig);
+            // Handle keyboard-interactive authentication for some servers
+            this.client.once('keyboard-interactive', (name, instructions, instructionsLang, prompts, finish) => {
+                if (this.credentials.authMethod === 'password' && this.credentials.password) {
+                    // Respond to keyboard-interactive with password
+                    finish([this.credentials.password]);
+                } else {
+                    // Reject keyboard-interactive if using key auth
+                    finish([]);
+                }
+            });
+
+            try {
+                this.client.connect(connectConfig);
+            } catch (error) {
+                clearTimeout(timeoutId);
+                reject(error);
+            }
         });
     }
 
@@ -350,6 +372,21 @@ export class BaseConnection extends EventEmitter {
                 prompt + '%'
             ];
 
+            // Add Linux-specific prompt patterns
+            const linuxPromptPatterns = [
+                /\$\s*$/,           // $ at end of line
+                /#\s*$/,           // # at end of line (root)
+                />\s*$/,           // > at end of line
+                /\]\s*\$\s*$/,     // ]$ pattern
+                /\]\s*#\s*$/,      // ]# pattern
+                /~\s*\$\s*$/,      // ~$ pattern
+                /~\s*#\s*$/,       // ~# pattern
+                /@.*:\s*\$\s*$/,   // user@host:$ pattern
+                /@.*:\s*#\s*$/,    // user@host:# pattern
+                /@.*:\s*~\s*\$\s*$/,  // user@host:~$ pattern
+                /@.*:\s*~\s*#\s*$/,   // user@host:~# pattern
+            ];
+
             const onData = (data: string) => {
                 buffer += data;
                 
@@ -362,11 +399,35 @@ export class BaseConnection extends EventEmitter {
                     return;
                 }
                 
+                // Check for Linux-specific prompt patterns
+                const hasLinuxPrompt = linuxPromptPatterns.some(pattern => pattern.test(buffer));
+                
+                if (hasLinuxPrompt) {
+                    cleanup();
+                    resolve(buffer);
+                    return;
+                }
+                
                 // Fast mode: also check for common prompt endings
                 if (this.fastMode) {
                     const lines = buffer.split('\n');
                     const lastLine = lines[lines.length - 1];
                     if (lastLine.match(/[>#$%]\s*$/)) {
+                        cleanup();
+                        resolve(buffer);
+                        return;
+                    }
+                }
+                
+                // Additional check for command completion - look for repeated patterns
+                const lines = buffer.split('\n');
+                if (lines.length > 1) {
+                    const lastLine = lines[lines.length - 1];
+                    
+                    // If we see the same prompt pattern twice, it's likely a prompt
+                    if (lastLine.length > 0 && 
+                        (lastLine.includes(prompt) || 
+                         linuxPromptPatterns.some(pattern => pattern.test(lastLine)))) {
                         cleanup();
                         resolve(buffer);
                         return;
@@ -385,11 +446,11 @@ export class BaseConnection extends EventEmitter {
                     this.currentChannel.removeListener('error', onError);
                 }
                 if (timeoutId) {
-                    global.clearTimeout(timeoutId);
+                    clearTimeout(timeoutId);
                 }
             };
 
-            timeoutId = global.setTimeout(() => {
+            timeoutId = setTimeout(() => {
                 cleanup();
                 reject(new Error(`Timeout waiting for prompt after ${actualTimeout}ms. Buffer: ${buffer.slice(-200)}`));
             }, actualTimeout);
@@ -685,24 +746,52 @@ export class BaseConnection extends EventEmitter {
                 }
             ];
         } else {
-            // Balanced algorithms for reliability and speed
+            // Optimized algorithms for SSH key authentication
+            const keyBasedAlgorithms = {
+                serverHostKey: [
+                    'ssh-rsa', 'rsa-sha2-256', 'rsa-sha2-512',
+                    'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
+                    'ssh-ed25519'
+                ],
+                cipher: [
+                    'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+                    'aes128-gcm@openssh.com', 'aes256-gcm@openssh.com',
+                    'aes128-cbc', 'aes192-cbc'
+                ],
+                hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1'],
+                kex: [
+                    'curve25519-sha256', 'curve25519-sha256@libssh.org',
+                    'diffie-hellman-group16-sha512', 'diffie-hellman-group18-sha512',
+                    'diffie-hellman-group14-sha256', 'ecdh-sha2-nistp256',
+                    'diffie-hellman-group14-sha1'
+                ]
+            };
+
+            // Password-based algorithms (more conservative)
+            const passwordBasedAlgorithms = {
+                serverHostKey: [
+                    'ssh-rsa', 'rsa-sha2-256', 'ecdsa-sha2-nistp256', 
+                    'ecdsa-sha2-nistp384', 'ssh-ed25519'
+                ],
+                cipher: [
+                    'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+                    'aes128-cbc', 'aes192-cbc'
+                ],
+                hmac: ['hmac-sha2-256', 'hmac-sha1'],
+                kex: [
+                    'diffie-hellman-group14-sha256', 'ecdh-sha2-nistp256',
+                    'diffie-hellman-group14-sha1'
+                ]
+            };
+
+            // Choose algorithm set based on authentication method
+            const primaryAlgorithms = this.credentials.authMethod === 'privateKey' 
+                ? keyBasedAlgorithms 
+                : passwordBasedAlgorithms;
+
             return [
-                {
-                    serverHostKey: [
-                        'ssh-rsa', 'rsa-sha2-256', 'ecdsa-sha2-nistp256', 
-                        'ecdsa-sha2-nistp384', 'ssh-ed25519'
-                    ],
-                    cipher: [
-                        'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
-                        'aes128-cbc', 'aes192-cbc'
-                    ],
-                    hmac: ['hmac-sha2-256', 'hmac-sha1'],
-                    kex: [
-                        'diffie-hellman-group14-sha256', 'ecdh-sha2-nistp256',
-                        'diffie-hellman-group14-sha1'
-                    ]
-                },
-                // Fallback
+                primaryAlgorithms,
+                // Fallback for older systems
                 {
                     serverHostKey: ['ssh-rsa'],
                     cipher: ['aes128-cbc'],
