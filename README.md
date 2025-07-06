@@ -97,7 +97,145 @@ The node uses the "Net Devices API" credential type with the following fields:
 ```json
 {
   "operation": "sendConfig",
-  "configCommands": "interface GigabitEthernet1/0/1\ndescription Test Interface\nno shutdown"
+  "configCommands": "interface Loopback102\ndescription ***TEST LOOPBACK 102****\nipv4 address 1.1.1.102 255.255.255.255"
+}
+```
+
+```
+interface Loopback102
+description ***TEST LOOPBACK 102****
+ipv4 address 1.1.1.102 255.255.255.255
+```
+
+```
+no interface Loopback102
+```
+
+### Safe, No-Impact Config Examples (Add & Remove)
+
+These examples are safe to use for testing and demo purposes. Each example shows how to add a test object (like a loopback, VLAN, or dummy interface) and how to remove it, so you can easily clean up after testing.
+
+#### Cisco IOS/IOS-XE
+**Add Loopback Interface**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "interface Loopback123\ndescription n8n test loopback\nip address 10.123.123.123 255.255.255.255"
+}
+```
+**Remove Loopback Interface**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "no interface Loopback123"
+}
+```
+**Add Dummy VLAN**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "vlan 1234\nname n8n_test_vlan"
+}
+```
+**Remove Dummy VLAN**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "no vlan 1234"
+}
+```
+
+#### Cisco IOS-XR
+**Add Loopback Interface**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "interface Loopback123\ndescription n8n test loopback\nipv4 address 10.123.123.123 255.255.255.255"
+}
+```
+**Remove Loopback Interface**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "no interface Loopback123"
+}
+```
+
+#### Cisco SG300
+**Add VLAN**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "vlan database\nvlan 1234\nexit"
+}
+```
+**Remove VLAN**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "vlan database\nno vlan 1234\nexit"
+}
+```
+
+#### Juniper JunOS
+**Add Loopback Interface**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "set interfaces lo0 unit 123 description \"n8n test loopback\"\nset interfaces lo0 unit 123 family inet address 10.123.123.123/32"
+}
+```
+**Remove Loopback Interface**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "delete interfaces lo0 unit 123"
+}
+```
+**Add Dummy VLAN**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "set vlans n8n-test-vlan vlan-id 1234"
+}
+```
+**Remove Dummy VLAN**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "delete vlans n8n-test-vlan"
+}
+```
+
+#### Linux
+**Add Dummy Network Interface (iproute2)**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "sudo ip link add n8n-dummy0 type dummy\nsudo ip link set n8n-dummy0 up"
+}
+```
+**Remove Dummy Network Interface**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "sudo ip link set n8n-dummy0 down\nsudo ip link delete n8n-dummy0"
+}
+```
+
+#### Generic SSH Device
+**Add a Test File**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "touch /tmp/n8n_testfile"
+}
+```
+**Remove Test File**
+```json
+{
+  "operation": "sendConfig",
+  "configCommands": "rm -f /tmp/n8n_testfile"
 }
 ```
 

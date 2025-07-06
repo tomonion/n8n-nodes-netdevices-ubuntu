@@ -259,7 +259,7 @@ export class BaseConnection extends EventEmitter {
     }
 
     protected async readUntilPrompt(expectedPrompt?: string, timeout: number = 10000): Promise<string> {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             let buffer = '';
             let timeoutId: NodeJS.Timeout;
             const prompt = expectedPrompt || this.basePrompt;
@@ -274,9 +274,15 @@ export class BaseConnection extends EventEmitter {
                 }
             };
 
+            const onError = (error: Error) => {
+                cleanup();
+                reject(error);
+            };
+
             const cleanup = () => {
                 if (this.currentChannel) {
                     this.currentChannel.removeListener('data', onData);
+                    this.currentChannel.removeListener('error', onError);
                 }
                 if (timeoutId) {
                     global.clearTimeout(timeoutId);
@@ -285,14 +291,15 @@ export class BaseConnection extends EventEmitter {
 
             timeoutId = global.setTimeout(() => {
                 cleanup();
-                resolve(buffer);
+                reject(new Error(`Timeout waiting for prompt after ${timeout}ms. Buffer: ${buffer.slice(-200)}`));
             }, timeout);
 
             if (this.currentChannel) {
                 this.currentChannel.on('data', onData);
+                this.currentChannel.on('error', onError);
             } else {
                 cleanup();
-                resolve('');
+                reject(new Error('No active channel available'));
             }
         });
     }
@@ -306,11 +313,37 @@ export class BaseConnection extends EventEmitter {
             // Send the command
             await this.writeChannel(command + this.newline);
             
-            // Wait for response
-            const output = await this.readUntilPrompt();
+            // Wait for response with timeout
+            const output = await this.readUntilPrompt(undefined, this.timeout);
             
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);
+
+            // Check for common error patterns in output
+            const errorPatterns = [
+                /invalid command/i,
+                /command not found/i,
+                /syntax error/i,
+                /unknown command/i,
+                /access denied/i,
+                /permission denied/i,
+                /authentication failed/i,
+                /connection lost/i,
+                /timeout/i,
+                /error:/i,
+                /failed/i
+            ];
+
+            const hasError = errorPatterns.some(pattern => pattern.test(cleanOutput));
+            
+            if (hasError) {
+                return {
+                    command,
+                    output: cleanOutput,
+                    success: false,
+                    error: 'Command execution returned an error'
+                };
+            }
 
             return {
                 command,
@@ -338,16 +371,49 @@ export class BaseConnection extends EventEmitter {
             await this.enterConfigMode();
             
             let allOutput = '';
+            let hasError = false;
+            let errorMessage = '';
             
             // Send each configuration command
             for (const command of configCommands) {
-                await this.writeChannel(command + this.newline);
-                const output = await this.readUntilPrompt();
-                allOutput += output;
+                try {
+                    await this.writeChannel(command + this.newline);
+                    const output = await this.readUntilPrompt(undefined, this.timeout);
+                    allOutput += output;
+                    
+                    // Check for error patterns in each command output
+                    const errorPatterns = [
+                        /invalid command/i,
+                        /syntax error/i,
+                        /unknown command/i,
+                        /access denied/i,
+                        /permission denied/i,
+                        /error:/i,
+                        /failed/i,
+                        /incomplete command/i,
+                        /ambiguous command/i
+                    ];
+                    
+                    if (errorPatterns.some(pattern => pattern.test(output))) {
+                        hasError = true;
+                        errorMessage = `Error in command: ${command}`;
+                        break;
+                    }
+                } catch (cmdError) {
+                    hasError = true;
+                    errorMessage = `Failed to execute command: ${command} - ${cmdError}`;
+                    break;
+                }
             }
             
-            // Exit configuration mode
-            await this.exitConfigMode();
+            // Always try to exit configuration mode
+            try {
+                await this.exitConfigMode();
+            } catch (exitError) {
+                // If we can't exit config mode, this is a serious error
+                hasError = true;
+                errorMessage = errorMessage || `Failed to exit configuration mode: ${exitError}`;
+            }
             
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(allOutput, configCommands.join('; '));
@@ -355,10 +421,18 @@ export class BaseConnection extends EventEmitter {
             return {
                 command: configCommands.join('; '),
                 output: cleanOutput,
-                success: true
+                success: !hasError,
+                error: hasError ? errorMessage : undefined
             };
 
         } catch (error) {
+            // Try to exit config mode on error
+            try {
+                await this.exitConfigMode();
+            } catch (exitError) {
+                // Ignore exit errors during error handling
+            }
+            
             return {
                 command: configCommands.join('; '),
                 output: '',
@@ -421,7 +495,24 @@ export class BaseConnection extends EventEmitter {
 
     // Utility methods
     isAlive(): boolean {
-        return this.isConnected;
+        return this.isConnected && this.currentChannel && !this.currentChannel.destroyed;
+    }
+
+    async healthCheck(): Promise<boolean> {
+        try {
+            if (!this.isAlive()) {
+                return false;
+            }
+            
+            // Send a simple command to check if the connection is responsive
+            await this.writeChannel(this.returnChar);
+            const response = await this.readChannel(5000);
+            
+            // If we get any response, the connection is alive
+            return response.length > 0;
+        } catch (error) {
+            return false;
+        }
     }
 
     getDeviceType(): string {
@@ -430,5 +521,14 @@ export class BaseConnection extends EventEmitter {
 
     getHost(): string {
         return this.credentials.host;
+    }
+
+    getConnectionInfo(): { host: string; port: number; deviceType: string; connected: boolean } {
+        return {
+            host: this.credentials.host,
+            port: this.credentials.port,
+            deviceType: this.credentials.deviceType,
+            connected: this.isAlive()
+        };
     }
 } 
