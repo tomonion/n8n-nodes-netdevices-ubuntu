@@ -121,9 +121,6 @@ export class BaseConnection extends EventEmitter {
             // Try to connect with different algorithm configurations
             await this.tryConnect();
 
-            // Session preparation with separate timeout
-            await this.sessionPreparationWithTimeout();
-
             Logger.info('SSH connection established successfully', {
                 host: this.credentials.host,
                 port: this.credentials.port,
@@ -205,6 +202,9 @@ export class BaseConnection extends EventEmitter {
                 });
                 
                 await this.tryConnectWithConfig(algorithmConfigs[i]);
+                
+                // Session preparation with separate timeout after successful SSH connection
+                await this.sessionPreparationWithTimeout();
                 
                 Logger.info('SSH connection established successfully', {
                     host: this.credentials.host,
@@ -340,18 +340,7 @@ export class BaseConnection extends EventEmitter {
                 clearTimeout(timeoutId);
                 this.lastActivity = Date.now();
                 this.isConnected = true;
-                this.sessionPreparation()
-                    .then(() => {
-                        Logger.debug('Session preparation completed successfully');
-                        resolve();
-                    })
-                    .catch((error) => {
-                        Logger.error('Session preparation failed', {
-                            error: error instanceof Error ? error.message : String(error),
-                            host: this.credentials.host
-                        });
-                        reject(error);
-                    });
+                resolve();
             });
 
             this.client.once('error', (error) => {

@@ -291,7 +291,7 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                 username: credentials.username as string,
                 authMethod: credentials.authMethod as 'password' | 'privateKey',
                 deviceType: credentials.deviceType as string,
-                timeout: connectionTimeout,
+                timeout: connectionTimeout / 1000,
                 keepAlive: true,
                 fastMode: fastMode,
                 commandTimeout: commandTimeout,
@@ -327,7 +327,7 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                 hasPrivateKey: !!deviceCredentials.privateKey,
                 hasPassphrase: !!deviceCredentials.passphrase,
                 passphraseLength: deviceCredentials.passphrase ? deviceCredentials.passphrase.length : 0,
-                timeout: deviceCredentials.timeout / 1000,
+                timeout: deviceCredentials.timeout,
                 fastMode: deviceCredentials.fastMode,
                 connectionPooling: deviceCredentials.connectionPooling,
                 reuseConnection: deviceCredentials.reuseConnection
