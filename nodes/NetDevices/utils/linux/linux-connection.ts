@@ -12,14 +12,19 @@ export class LinuxConnection extends BaseConnection {
         // Create shell channel
         await this.createLinuxShellChannel();
         
-        // Set base prompt
-        await this.setBasePrompt();
-        
-        // Check if we're root user
-        await this.checkRootUser();
-        
-        // Set shell options
-        await this.setShellOptions();
+        if (this.fastMode) {
+            // Fast mode: minimal setup
+            await this.setBasePrompt();
+        } else {
+            // Standard mode: full setup
+            await this.setBasePrompt();
+            
+            // Check if we're root user
+            await this.checkRootUser();
+            
+            // Set shell options
+            await this.setShellOptions();
+        }
     }
 
     private async createLinuxShellChannel(): Promise<void> {
@@ -89,8 +94,11 @@ export class LinuxConnection extends BaseConnection {
             // Send the command
             await this.writeChannel(command + this.newline);
             
+            // Use optimized timeout - reduced from 15000
+            const timeout = this.fastMode ? 4000 : 8000;
+            
             // Wait for response with appropriate timeout
-            const output = await this.readUntilPrompt(undefined, 15000);
+            const output = await this.readUntilPrompt(undefined, timeout);
             
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);

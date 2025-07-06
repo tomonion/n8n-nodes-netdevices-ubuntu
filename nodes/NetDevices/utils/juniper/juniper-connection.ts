@@ -13,17 +13,23 @@ export class JuniperConnection extends BaseConnection {
         // Create shell channel
         await this.createJuniperShellChannel();
         
-        // Enter CLI mode if we're in shell
-        await this.enterCliMode();
-        
-        // Set terminal width
-        await this.setTerminalWidth();
-        
-        // Disable paging and other CLI settings
-        await this.disablePaging();
-        
-        // Set base prompt
-        await this.setBasePrompt();
+        if (this.fastMode) {
+            // Fast mode: minimal setup
+            await this.setBasePrompt();
+        } else {
+            // Standard mode: full setup
+            // Enter CLI mode if we're in shell
+            await this.enterCliMode();
+            
+            // Run terminal setup in parallel
+            await Promise.all([
+                this.setTerminalWidth(),
+                this.disablePaging(),
+            ]);
+            
+            // Set base prompt
+            await this.setBasePrompt();
+        }
     }
 
     private async createJuniperShellChannel(): Promise<void> {
@@ -179,16 +185,22 @@ export class JuniperConnection extends BaseConnection {
                 throw new Error('Not connected to device');
             }
 
-            // Ensure we're in CLI mode
-            if (!this.inCliMode) {
-                await this.enterCliMode();
+            // In fast mode, skip CLI mode check for simple commands
+            if (!this.fastMode) {
+                // Ensure we're in CLI mode
+                if (!this.inCliMode) {
+                    await this.enterCliMode();
+                }
             }
 
             // Send the command
             await this.writeChannel(command + this.newline);
             
+            // Use optimized timeout - reduced from 15000
+            const timeout = this.fastMode ? 5000 : 10000;
+            
             // Wait for response with appropriate timeout
-            const output = await this.readUntilPrompt(undefined, 15000);
+            const output = await this.readUntilPrompt(undefined, timeout);
             
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);

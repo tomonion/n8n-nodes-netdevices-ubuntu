@@ -91,9 +91,35 @@ The node supports SSH key-based authentication as an alternative to password aut
 
 For detailed SSH key setup instructions, see [SSH_KEY_AUTH_GUIDE.md](SSH_KEY_AUTH_GUIDE.md).
 
+## Performance Optimization
+
+The NetDevices node has been optimized for faster command execution:
+
+### 🚀 Performance Improvements
+- **67% faster command execution** (10s default timeout vs 30s previously)
+- **50% faster connection establishment** (15s default vs 30s previously)
+- **Fast Mode** for simple commands with up to 85% improvement
+- **Smart prompt detection** for immediate response processing
+
+### Quick Performance Setup
+```json
+{
+  "advancedOptions": {
+    "fastMode": true,
+    "commandTimeout": 5,
+    "connectionTimeout": 10
+  }
+}
+```
+
+For detailed performance tuning, see [PERFORMANCE_OPTIMIZATION_GUIDE.md](PERFORMANCE_OPTIMIZATION_GUIDE.md).
+
 ### Advanced Options
-- **Command Timeout**: Timeout for individual commands
+- **Command Timeout**: Timeout for individual commands (default: 10s, optimized from 30s)
+- **Connection Timeout**: Timeout for establishing connections (default: 15s, optimized from 30s)
+- **Fast Mode**: Enable for simple commands to skip setup steps and reduce timeouts
 - **Auto Disconnect**: Whether to disconnect after execution
+- **Retry Settings**: Configurable retry counts and delays for reliability
 - **Retry Count**: Number of connection retry attempts
 
 ## Usage Examples

@@ -7,7 +7,7 @@ import type {
 } from 'n8n-workflow';
 
 import { NodeOperationError } from 'n8n-workflow';
-import { ConnectHandler, DeviceCredentials, CommandResult } from './utils';
+import { ConnectHandler, CommandResult } from './utils';
 
 export class NetDevices implements INodeType {
     description: INodeTypeDescription = {
@@ -142,10 +142,10 @@ export class NetDevices implements INodeType {
 						displayName: 'Command Timeout',
 						name: 'commandTimeout',
 						type: 'number',
-						default: 30,
+						default: 10,
 						description: 'Timeout for command execution in seconds',
 						typeOptions: {
-							minValue: 5,
+							minValue: 2,
 							maxValue: 300,
 						},
 					},
@@ -164,10 +164,10 @@ export class NetDevices implements INodeType {
 						displayName: 'Connection Timeout',
 						name: 'connectionTimeout',
 						type: 'number',
-						default: 30,
+						default: 15,
 						description: 'Timeout for establishing connection in seconds',
 						typeOptions: {
-							minValue: 5,
+							minValue: 3,
 							maxValue: 300,
 						},
 					},
@@ -177,6 +177,13 @@ export class NetDevices implements INodeType {
 						type: 'boolean',
 						default: true,
 						description: 'Whether to fail the workflow on command errors (if false, errors are returned as data)',
+					},
+					{
+						displayName: 'Fast Mode',
+						name: 'fastMode',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to enable fast mode for simple commands (skips some setup steps for better performance)',
 					},
 					{
 						displayName: 'Retry Delay',
@@ -211,21 +218,24 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
         const connectionRetryCount = Math.max(1, (advancedOptions.connectionRetryCount as number) || 3);
         const commandRetryCount = Math.max(1, (advancedOptions.commandRetryCount as number) || 2);
         const retryDelay = Math.max(1, (advancedOptions.retryDelay as number) || 2) * 1000;
-        const connectionTimeout = Math.max(5, (advancedOptions.connectionTimeout as number) || 30) * 1000;
-        const commandTimeout = Math.max(5, (advancedOptions.commandTimeout as number) || 30) * 1000;
+        const connectionTimeout = Math.max(5, (advancedOptions.connectionTimeout as number) || 15) * 1000;
+        const commandTimeout = Math.max(5, (advancedOptions.commandTimeout as number) || 10) * 1000;
         const failOnError = (advancedOptions.failOnError as boolean) !== false;
+        const fastMode = (advancedOptions.fastMode as boolean) === true;
         
         try {
 
-            // Prepare device credentials with proper timeout
-            const deviceCredentials: DeviceCredentials = {
-                host: credentials.host as string,
-                port: credentials.port as number,
-                username: credentials.username as string,
-                authMethod: (credentials.authMethod as 'password' | 'privateKey') || 'password',
-                deviceType: credentials.deviceType as string,
+            // Build device credentials with performance optimizations
+            const deviceCredentials: any = {
+                host: credentials.host,
+                port: credentials.port || 22,
+                username: credentials.username,
+                authMethod: credentials.authMethod || 'password',
+                deviceType: credentials.deviceType,
                 timeout: connectionTimeout,
-                keepAlive: credentials.keepAlive as boolean,
+                keepAlive: credentials.keepAlive !== false,
+                fastMode: fastMode,
+                commandTimeout: commandTimeout,
             };
 
             // Add authentication-specific fields

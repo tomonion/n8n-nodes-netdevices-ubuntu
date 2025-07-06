@@ -14,17 +14,22 @@ export class CiscoConnection extends BaseConnection {
         // Create shell channel
         await this.createCiscoShellChannel();
         
-        // Set terminal width first
-        await this.setTerminalWidth();
-        
-        // Disable paging
-        await this.disablePaging();
-        
-        // Set base prompt
-        await this.setBasePrompt();
-        
-        // Check if we need to enter enable mode
-        await this.checkAndEnterEnableMode();
+        if (this.fastMode) {
+            // Fast mode: minimal setup
+            await this.setBasePrompt();
+            // Skip enable mode check in fast mode for simple commands
+        } else {
+            // Standard mode: full setup in parallel
+            await Promise.all([
+                this.setTerminalWidth(),
+                this.disablePaging(),
+            ]);
+            
+            await this.setBasePrompt();
+            
+            // Check if we need to enter enable mode
+            await this.checkAndEnterEnableMode();
+        }
     }
 
     private async createCiscoShellChannel(): Promise<void> {
@@ -168,16 +173,22 @@ export class CiscoConnection extends BaseConnection {
                 throw new Error('Not connected to device');
             }
 
-            // Ensure we're in enable mode for most commands
-            if (!this.inEnableMode && !command.startsWith('show') && command !== 'enable') {
-                await this.enterEnableMode();
+            // In fast mode, skip enable mode check for show commands
+            if (!this.fastMode) {
+                // Ensure we're in enable mode for most commands
+                if (!this.inEnableMode && !command.startsWith('show') && command !== 'enable') {
+                    await this.enterEnableMode();
+                }
             }
 
             // Send the command
             await this.writeChannel(command + this.newline);
             
+            // Use optimized timeout - reduced from 15000
+            const timeout = this.fastMode ? 5000 : 10000;
+            
             // Wait for response with appropriate timeout
-            const output = await this.readUntilPrompt(undefined, 15000);
+            const output = await this.readUntilPrompt(undefined, timeout);
             
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);

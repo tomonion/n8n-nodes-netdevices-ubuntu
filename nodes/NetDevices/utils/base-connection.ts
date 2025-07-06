@@ -12,6 +12,8 @@ export interface DeviceCredentials {
     deviceType: string;
     timeout?: number;
     keepAlive?: boolean;
+    fastMode?: boolean;
+    commandTimeout?: number;
 }
 
 export interface CommandResult {
@@ -29,16 +31,20 @@ export class BaseConnection extends EventEmitter {
     protected basePrompt: string = '';
     protected enabledPrompt: string = '';
     protected configPrompt: string = '';
-    protected timeout: number = 30000;
+    protected timeout: number = 10000;
     protected encoding: string = 'utf8';
     protected newline: string = '\n';
     protected returnChar: string = '\r';
+    protected fastMode: boolean = false;
+    protected commandTimeout: number = 8000;
 
     constructor(credentials: DeviceCredentials) {
         super();
         this.credentials = credentials;
         this.client = new Client();
-        this.timeout = credentials.timeout || 30000;
+        this.timeout = credentials.timeout || 10000;
+        this.fastMode = credentials.fastMode || false;
+        this.commandTimeout = credentials.commandTimeout || 8000;
         this.setupEventHandlers();
     }
 
@@ -182,14 +188,18 @@ export class BaseConnection extends EventEmitter {
         // Create shell channel
         await this.createShellChannel();
         
-        // Set base prompt
-        await this.setBasePrompt();
-        
-        // Disable paging
-        await this.disablePaging();
-        
-        // Set terminal width
-        await this.setTerminalWidth();
+        if (this.fastMode) {
+            // Fast mode: minimal setup for better performance
+            await this.setBasePrompt();
+        } else {
+            // Standard mode: full setup
+            // Run setup operations in parallel for better performance
+            await Promise.all([
+                this.setBasePrompt(),
+                this.disablePaging(),
+                this.setTerminalWidth(),
+            ]);
+        }
     }
 
     private async createShellChannel(): Promise<void> {
@@ -283,14 +293,40 @@ export class BaseConnection extends EventEmitter {
             let buffer = '';
             let timeoutId: NodeJS.Timeout;
             const prompt = expectedPrompt || this.basePrompt;
+            
+            // Use shorter timeout in fast mode
+            const actualTimeout = this.fastMode ? Math.min(timeout, 5000) : timeout;
+            
+            // Smart prompt patterns for faster detection
+            const promptPatterns = [
+                prompt,
+                prompt + '#',
+                prompt + '>',
+                prompt + '$',
+                prompt + '%'
+            ];
 
             const onData = (data: string) => {
                 buffer += data;
                 
-                // Check if we've received the expected prompt
-                if (buffer.includes(prompt)) {
+                // Check for any prompt pattern match
+                const hasPrompt = promptPatterns.some(p => buffer.includes(p));
+                
+                if (hasPrompt) {
                     cleanup();
                     resolve(buffer);
+                    return;
+                }
+                
+                // Fast mode: also check for common prompt endings
+                if (this.fastMode) {
+                    const lines = buffer.split('\n');
+                    const lastLine = lines[lines.length - 1];
+                    if (lastLine.match(/[>#$%]\s*$/)) {
+                        cleanup();
+                        resolve(buffer);
+                        return;
+                    }
                 }
             };
 
@@ -311,8 +347,8 @@ export class BaseConnection extends EventEmitter {
 
             timeoutId = global.setTimeout(() => {
                 cleanup();
-                reject(new Error(`Timeout waiting for prompt after ${timeout}ms. Buffer: ${buffer.slice(-200)}`));
-            }, timeout);
+                reject(new Error(`Timeout waiting for prompt after ${actualTimeout}ms. Buffer: ${buffer.slice(-200)}`));
+            }, actualTimeout);
 
             if (this.currentChannel) {
                 this.currentChannel.on('data', onData);
@@ -333,11 +369,23 @@ export class BaseConnection extends EventEmitter {
             // Send the command
             await this.writeChannel(command + this.newline);
             
+            // Use optimized timeout based on mode
+            const timeout = this.fastMode ? Math.min(this.commandTimeout, 5000) : this.commandTimeout;
+            
             // Wait for response with timeout
-            const output = await this.readUntilPrompt(undefined, this.timeout);
+            const output = await this.readUntilPrompt(undefined, timeout);
             
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);
+
+            // In fast mode, skip extensive error checking for simple commands
+            if (this.fastMode && command.startsWith('show')) {
+                return {
+                    command,
+                    output: cleanOutput,
+                    success: true
+                };
+            }
 
             // Check for common error patterns in output
             const errorPatterns = [

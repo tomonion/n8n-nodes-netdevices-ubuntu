@@ -152,16 +152,22 @@ export class CiscoSG300Connection extends BaseConnection {
                 throw new Error('Not connected to device');
             }
 
-            // Ensure we're in enable mode for most commands
-            if (!this.inEnableMode && !command.startsWith('show') && command !== 'enable') {
-                await this.enterEnableMode();
+            // In fast mode, skip enable mode check for show commands
+            if (!this.fastMode) {
+                // Ensure we're in enable mode for most commands
+                if (!this.inEnableMode && !command.startsWith('show') && command !== 'enable') {
+                    await this.enterEnableMode();
+                }
             }
 
             // Send the command
             await this.writeChannel(command + this.newline);
             
+            // Use optimized timeout - reduced from 15000
+            const timeout = this.fastMode ? 5000 : 10000;
+            
             // Wait for response with appropriate timeout
-            const output = await this.readUntilPrompt(undefined, 15000);
+            const output = await this.readUntilPrompt(undefined, timeout);
             
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);
