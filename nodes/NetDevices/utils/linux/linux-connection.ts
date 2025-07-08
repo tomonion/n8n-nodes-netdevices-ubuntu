@@ -293,14 +293,19 @@ export class LinuxConnection extends BaseConnection {
 
             Logger.debug('Sending command', { command, fastMode: this.fastMode });
 
+            // Clear any pending data in the channel first
+            await this.readChannel(100).catch(() => {}); // Drain any pending data
+            
             // Send the command
             await this.writeChannel(command + this.newline);
             
-            // Add a small delay to ensure command starts executing
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // Add a longer delay to ensure command starts executing
+            await new Promise(resolve => setTimeout(resolve, 200));
             
             // Use optimized timeout with better handling
-            const timeout = this.fastMode ? 4000 : 8000;
+            const timeout = this.fastMode ? 6000 : 12000; // Increased timeout
+            
+            Logger.debug('Waiting for command output', { command, timeout });
             
             // Wait for response with appropriate timeout
             const output = await this.readUntilPromptEnhanced(timeout);
@@ -345,49 +350,88 @@ export class LinuxConnection extends BaseConnection {
         return new Promise((resolve, reject) => {
             let buffer = '';
             let timeoutId: NodeJS.Timeout;
+            let commandExecutionStarted = false;
+            let lastDataTime = Date.now();
             
-            // Enhanced prompt patterns for Linux
-            const linuxPromptPatterns = [
-                this.basePrompt,
-                this.shellPrompt,
-                /\$\s*$/,           // $ at end
-                /#\s*$/,           // # at end
-                />\s*$/,           // > at end
-                /\]\s*\$\s*$/,     // ]$ pattern
-                /\]\s*#\s*$/,      // ]# pattern
-                /@.*:\s*\$\s*$/,   // user@host:$ pattern
-                /@.*:\s*#\s*$/,    // user@host:# pattern
-                /@.*:\s*~\s*\$\s*$/,  // user@host:~$ pattern
-                /@.*:\s*~\s*#\s*$/,   // user@host:~# pattern
+            // More specific prompt patterns that indicate command completion
+            const commandCompletePatterns = [
+                /ubuntu@[^:]+:[^$#>]*[$#>]\s*$/,  // ubuntu@host:path$ pattern
+                /root@[^:]+:[^$#>]*[$#>]\s*$/,    // root@host:path$ pattern
+                /[^@]+@[^:]+:[^$#>]*[$#>]\s*$/,   // user@host:path$ pattern
+                /\[[^\]]+\]\s*[$#>]\s*$/,        // [user@host] pattern
+                /^\s*[$#>]\s*$/,                 // Simple prompt at start of line
             ];
 
             const onData = (data: string) => {
                 buffer += data;
+                lastDataTime = Date.now();
                 
-                // Check for any prompt pattern match
-                const hasPrompt = linuxPromptPatterns.some(pattern => {
-                    if (typeof pattern === 'string') {
-                        return buffer.includes(pattern);
-                    } else {
-                        return pattern.test(buffer);
-                    }
+                Logger.debug('Received data chunk', {
+                    dataLength: data.length,
+                    bufferLength: buffer.length,
+                    dataSample: data.slice(0, 100),
+                    commandExecutionStarted
                 });
                 
-                if (hasPrompt) {
-                    cleanup();
-                    resolve(buffer);
-                    return;
+                // Check if we've received some actual content (not just prompt echo)
+                if (!commandExecutionStarted) {
+                    // Look for signs that command execution has started
+                    const lines = buffer.split('\n');
+                    if (lines.length > 1 || buffer.length > 100) {
+                        commandExecutionStarted = true;
+                        Logger.debug('Command execution detected');
+                    }
                 }
                 
-                // Additional check for command completion indicators
-                const lines = buffer.split('\n');
-                const lastLine = lines[lines.length - 1];
+                // Only check for completion if we've seen command execution start
+                if (commandExecutionStarted) {
+                    const lines = buffer.split('\n');
+                    const lastLine = lines[lines.length - 1];
+                    
+                    // Check if the last line matches a command completion pattern
+                    const isComplete = commandCompletePatterns.some(pattern => {
+                        const match = pattern.test(lastLine);
+                        if (match) {
+                            Logger.debug('Command completion pattern matched', {
+                                pattern: pattern.toString(),
+                                lastLine: lastLine.slice(0, 100)
+                            });
+                        }
+                        return match;
+                    });
+                    
+                    if (isComplete) {
+                        // Wait a bit more to ensure we got all output
+                        setTimeout(() => {
+                            cleanup();
+                            Logger.debug('Command execution completed', {
+                                bufferLength: buffer.length,
+                                finalSample: buffer.slice(-200)
+                            });
+                            resolve(buffer);
+                        }, 50);
+                        return;
+                    }
+                }
                 
-                // Check if last line looks like a prompt
-                if (lastLine.length > 0 && this.detectLinuxPrompt(lastLine)) {
-                    cleanup();
-                    resolve(buffer);
-                    return;
+                // Fallback: if we haven't seen new data for a while and buffer looks complete
+                if (commandExecutionStarted && buffer.length > 0) {
+                    const timeSinceLastData = Date.now() - lastDataTime;
+                    if (timeSinceLastData > 500) { // 500ms of no new data
+                        const lines = buffer.split('\n');
+                        const lastLine = lines[lines.length - 1];
+                        
+                        // Check if it looks like a prompt
+                        if (lastLine.includes('@') && (lastLine.includes('$') || lastLine.includes('#'))) {
+                            cleanup();
+                            Logger.debug('Command execution completed (fallback)', {
+                                bufferLength: buffer.length,
+                                finalSample: buffer.slice(-200)
+                            });
+                            resolve(buffer);
+                            return;
+                        }
+                    }
                 }
             };
 
@@ -408,6 +452,12 @@ export class LinuxConnection extends BaseConnection {
 
             timeoutId = setTimeout(() => {
                 cleanup();
+                Logger.error('Command execution timeout', {
+                    timeout,
+                    bufferLength: buffer.length,
+                    bufferSample: buffer.slice(-200),
+                    commandExecutionStarted
+                });
                 reject(new Error(`Timeout waiting for prompt after ${timeout}ms. Buffer: ${buffer.slice(-200)}`));
             }, timeout);
 
@@ -502,47 +552,74 @@ export class LinuxConnection extends BaseConnection {
     }
 
     protected sanitizeOutput(output: string, command: string): string {
-        // Escape special regex characters in the command
+        Logger.debug('Sanitizing output', {
+            command,
+            originalLength: output.length,
+            originalSample: output.slice(0, 200)
+        });
+        
+        // Split into lines for better processing
+        let lines = output.split(/\r?\n/);
+        
+        // Remove the command echo line (usually the first line containing the command)
         const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        
-        // Remove the command echo (first occurrence)
-        let cleanOutput = output.replace(new RegExp('^.*?' + escapedCommand + '.*?[\r\n]+', 'i'), '');
-        
-        // Remove shell prompts and common artifacts
-        const escapedShellPrompt = this.shellPrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        cleanOutput = cleanOutput.replace(new RegExp(escapedShellPrompt, 'g'), '');
+        lines = lines.filter(line => {
+            const containsCommand = new RegExp(escapedCommand, 'i').test(line);
+            const isCommandEcho = containsCommand && line.trim().endsWith(command);
+            return !isCommandEcho;
+        });
         
         // Remove PS1 export commands and shell setup artifacts
-        cleanOutput = cleanOutput.replace(/export\s+PS1=.*?[\r\n]+/gi, '');
-        cleanOutput = cleanOutput.replace(/PS1=.*?[\r\n]+/gi, '');
+        lines = lines.filter(line => {
+            return !line.match(/export\s+PS1=/) && 
+                   !line.match(/PS1=/) &&
+                   !line.match(/set\s+[+-][a-z]+/);
+        });
         
-        // Remove terminal control sequences (bracketed paste mode, etc.)
-        cleanOutput = cleanOutput.replace(/\[?\?2004[lh]/g, ''); // Bracketed paste mode
-        cleanOutput = cleanOutput.replace(/\[\?[0-9]+[lh]/g, ''); // Other terminal control sequences
-        cleanOutput = cleanOutput.replace(/\x1b\[[0-9;]*[mK]/g, ''); // ANSI escape sequences
-        cleanOutput = cleanOutput.replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''); // Other ANSI sequences
+        // Remove terminal control sequences and ANSI codes
+        lines = lines.map(line => {
+            return line
+                .replace(/\[?\?2004[lh]/g, '') // Bracketed paste mode
+                .replace(/\[\?[0-9]+[lh]/g, '') // Other terminal control sequences
+                .replace(/\x1b\[[0-9;]*[mK]/g, '') // ANSI escape sequences
+                .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // Other ANSI sequences
+                .replace(/\x1b\[[0-9;?]*[hlr]/g, ''); // Terminal mode sequences
+        });
         
-        // Remove shell prompts at the end of lines
-        cleanOutput = cleanOutput.replace(/\$\s*$/gm, ''); // Remove trailing $
-        cleanOutput = cleanOutput.replace(/#\s*$/gm, ''); // Remove trailing #
-        cleanOutput = cleanOutput.replace(/>\s*$/gm, ''); // Remove trailing >
+        // Remove prompt lines (last line is usually the prompt)
+        if (lines.length > 0) {
+            const lastLine = lines[lines.length - 1];
+            // Remove if it looks like a prompt
+            if (lastLine.match(/^[^@]*@[^:]*:[^$#>]*[$#>]\s*$/) || 
+                lastLine.match(/^\[[^\]]*\]\s*[$#>]\s*$/) ||
+                lastLine.match(/^\s*[$#>]\s*$/)) {
+                lines.pop();
+            }
+        }
         
-        // Remove full prompt patterns
-        cleanOutput = cleanOutput.replace(/^[^@]*@[^:]*:[^$#>]*[$#>]\s*/gm, ''); // user@host:path$ patterns
-        cleanOutput = cleanOutput.replace(/^\[[^\]]*\]\s*[$#>]\s*/gm, ''); // [user@host] patterns
+        // Remove empty lines at the beginning and end
+        while (lines.length > 0 && lines[0].trim() === '') {
+            lines.shift();
+        }
+        while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+            lines.pop();
+        }
         
-        // Remove set commands and shell options
-        cleanOutput = cleanOutput.replace(/set\s+[+-][a-z]+[\r\n]*/gi, '');
+        // Join back and final cleanup
+        let cleanOutput = lines.join('\n');
         
-        // Remove empty lines and extra whitespace
-        cleanOutput = cleanOutput.replace(/^\s*[\r\n]+/gm, ''); // Remove empty lines at start
-        cleanOutput = cleanOutput.replace(/[\r\n]+\s*$/gm, ''); // Remove empty lines at end
-        cleanOutput = cleanOutput.replace(/\r\n/g, '\n'); // Normalize line endings
-        cleanOutput = cleanOutput.replace(/\r/g, '\n'); // Convert remaining \r to \n
-        cleanOutput = cleanOutput.replace(/\n\s*\n/g, '\n'); // Remove double newlines
+        // Remove any remaining control characters
+        cleanOutput = cleanOutput.replace(/[\x00-\x1F\x7F]/g, '');
         
-        // Final cleanup - remove leading/trailing whitespace
+        // Final trim
         cleanOutput = cleanOutput.trim();
+        
+        Logger.debug('Output sanitized', {
+            command,
+            cleanLength: cleanOutput.length,
+            cleanSample: cleanOutput.slice(0, 200),
+            linesRemoved: output.split(/\r?\n/).length - lines.length
+        });
         
         return cleanOutput;
     }
