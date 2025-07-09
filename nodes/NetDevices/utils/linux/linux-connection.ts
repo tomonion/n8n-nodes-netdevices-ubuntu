@@ -16,7 +16,6 @@ try {
 }
 
 export class LinuxConnection extends BaseConnection {
-    private promptPattern: string = '[$#]';
     protected basePrompt: string = '';
     private rootUser: boolean = false;
 
@@ -33,13 +32,10 @@ export class LinuxConnection extends BaseConnection {
         try {
             // Create shell channel
             await this.createLinuxShellChannel();
-            
-            // Test channel read and find prompt (like Netmiko's _test_channel_read)
-            await this.testChannelRead();
-            
+
             // Set base prompt
             await this.setBasePrompt();
-            
+
             Logger.debug('Linux session preparation completed successfully');
 
         } catch (error) {
@@ -67,51 +63,83 @@ export class LinuxConnection extends BaseConnection {
                 }
 
                 this.currentChannel = channel;
-                Logger.debug('Shell channel created successfully');
-                resolve();
+                // Add a small delay to allow the banner to be received
+                setTimeout(() => {
+                    Logger.debug('Shell channel created successfully');
+                    resolve();
+                }, 500);
             });
         });
     }
 
-    private async testChannelRead(): Promise<void> {
+    private async testChannelRead(): Promise<string> {
         Logger.debug('Testing channel read to detect initial prompt');
-        
-        // Wait a bit for initial data
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Read initial data
+        // Read initial data with a short timeout
         const initialData = await this.readChannel(2000).catch(() => '');
         Logger.debug('Initial channel data received', {
             dataLength: initialData.length,
             dataSample: initialData.slice(-100)
         });
+        return initialData;
     }
 
     protected async setBasePrompt(): Promise<void> {
         Logger.debug('Setting base prompt for Linux');
         
+        // Consume any initial banner
+        const initialOutput = await this.testChannelRead();
+        
+        // Find prompt in the initial output if available
+        const promptMatch = initialOutput.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.*[$#]\s*)$/);
+
+        if (promptMatch) {
+            this.basePrompt = promptMatch[1].trim();
+            Logger.info('Found prompt in initial output', { basePrompt: this.basePrompt });
+            // Disable terminal paging
+            await this.disablePaging();
+            return;
+        }
+
+        // If not found, try to determine it interactively
         try {
-            // Send a simple command to get the current prompt
-            await this.writeChannel(this.newline);
-            const output = await this.readUntilPattern(this.promptPattern, 5000);
+            const tempPrompt = 'n8n-detect-prompt';
+            const command = `PS1='${tempPrompt}'`;
+            await this.writeChannel(command + this.newline);
+            const output = await this.readUntilPattern(tempPrompt, 5000);
             
-            // Extract the base prompt from the output
+            // The prompt is what's left after the command and the temp prompt text
             const lines = output.trim().split('\n');
-            const lastLine = lines[lines.length - 1];
+            this.basePrompt = lines[lines.length - 1].replace(tempPrompt, '').trim();
             
-            // Remove the prompt terminator to get base prompt
-            this.basePrompt = lastLine.replace(/[$#]\s*$/, '').trim();
+            // Restore original prompt by sending a new shell command that re-sources the profile
+            await this.writeChannel(`exec $SHELL` + this.newline);
+            await new Promise(resolve => setTimeout(resolve, 500)); // wait for shell to restart
             
-            Logger.debug('Base prompt set', {
-                basePrompt: this.basePrompt,
-                promptPattern: this.promptPattern
-            });
-            
+            // Read new prompt
+            const finalOutput = await this.readUntilPattern('[$#]', 5000);
+            const finalLines = finalOutput.trim().split('\n');
+            this.basePrompt = finalLines[finalLines.length-1].trim();
+
+            Logger.info('Interactively determined base prompt', { basePrompt: this.basePrompt });
+
         } catch (error) {
-            Logger.warn('Failed to set base prompt, using fallback', {
-                error: error instanceof Error ? error.message : String(error)
+            Logger.warn('Failed to set base prompt dynamically, using fallback.', {
+                error: error instanceof Error ? error.message : String(error),
             });
-            this.basePrompt = 'linux';
+            // Fallback for systems that don't allow PS1 changes
+            await this.writeChannel(this.newline);
+            const fallbackOutput = await this.readUntilPattern('[$#]', 2000);
+            const lines = fallbackOutput.trim().split('\n');
+            this.basePrompt = lines[lines.length - 1].trim();
+            Logger.info('Using fallback prompt detection', { basePrompt: this.basePrompt });
+        }
+        
+        if (!this.basePrompt) {
+            Logger.error('Failed to determine any prompt, using a generic fallback.');
+            this.basePrompt = '[$#]'; // A generic regex as a last resort
+        } else {
+            // Disable paging after finding prompt
+            await this.disablePaging();
         }
     }
 
@@ -123,27 +151,14 @@ export class LinuxConnection extends BaseConnection {
 
             Logger.debug('Sending Linux command', { command });
 
-            // Phase 1: Send command and wait for command echo (like Netmiko's command_echo_read)
             await this.writeChannel(command + this.newline);
             
-            const commandEcho = await this.readUntilPattern(this.escapeRegex(command), 10000);
-            Logger.debug('Command echo received', {
-                command,
-                echoLength: commandEcho.length
-            });
+            // Read until the prompt is found.
+            // This reads both the command echo (if any) and the command output.
+            const output = await this.readUntilPattern(this.basePrompt, 10000);
 
-            // Phase 2: Read until prompt returns (like Netmiko's read_until_pattern for prompt)
-            const promptOutput = await this.readUntilPattern(this.promptPattern, 10000);
-            Logger.debug('Prompt output received', {
-                command,
-                outputLength: promptOutput.length
-            });
-
-            // Combine the outputs
-            const fullOutput = commandEcho + promptOutput;
-            
             // Clean up the output
-            const cleanOutput = this.sanitizeOutput(fullOutput, command);
+            const cleanOutput = this.sanitizeOutput(output, command);
 
             return {
                 command,
@@ -167,46 +182,13 @@ export class LinuxConnection extends BaseConnection {
     }
 
     private async readUntilPattern(pattern: string, timeout: number = 10000): Promise<string> {
+        let buffer = '';
+        const promptRegex = new RegExp(this.escapeRegex(pattern));
+
         return new Promise((resolve, reject) => {
-            let buffer = '';
-            let timeoutId: NodeJS.Timeout;
-            const loopDelay = 10; // 10ms like Netmiko
-
-            const onData = (data: string) => {
-                buffer += data;
-                
-                // Check if pattern is found (like Netmiko's re.search)
-                const regex = new RegExp(pattern);
-                if (regex.test(buffer)) {
-                    cleanup();
-                    Logger.debug('Pattern found', {
-                        pattern,
-                        bufferLength: buffer.length,
-                        bufferSample: buffer.slice(-200)
-                    });
-                    resolve(buffer);
-                    return;
-                }
-            };
-
-            const onError = (error: Error) => {
+            const timeoutId = setTimeout(() => {
                 cleanup();
-                reject(error);
-            };
-
-            const cleanup = () => {
-                if (this.currentChannel) {
-                    this.currentChannel.removeListener('data', onData);
-                    this.currentChannel.removeListener('error', onError);
-                }
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                }
-            };
-
-            timeoutId = setTimeout(() => {
-                cleanup();
-                const msg = `Pattern not detected: ${pattern} in output. Buffer: ${buffer.slice(-200)}`;
+                const msg = `Timeout waiting for pattern: ${pattern}. Last buffer content: ${buffer.slice(-200)}`;
                 Logger.error('Read until pattern timeout', {
                     pattern,
                     timeout,
@@ -216,20 +198,69 @@ export class LinuxConnection extends BaseConnection {
                 reject(new Error(msg));
             }, timeout);
 
+            const onData = (data: Buffer) => {
+                buffer += data.toString('utf8');
+                if (promptRegex.test(buffer)) {
+                    cleanup();
+                    resolve(buffer);
+                }
+            };
+
+            const onError = (err: Error) => {
+                cleanup();
+                reject(err);
+            };
+            
+            const onClose = () => {
+                cleanup();
+                reject(new Error('Channel closed while waiting for pattern.'));
+            };
+
+            const cleanup = () => {
+                clearTimeout(timeoutId);
+                if (this.currentChannel) {
+                    this.currentChannel.removeListener('data', onData);
+                    this.currentChannel.removeListener('error', onError);
+                    this.currentChannel.removeListener('close', onClose);
+                }
+            };
+
             if (this.currentChannel) {
                 this.currentChannel.on('data', onData);
                 this.currentChannel.on('error', onError);
-                
-                // Start the read loop with small delay (like Netmiko)
-                const readLoop = () => {
-                    if (timeoutId) {
-                        setTimeout(readLoop, loopDelay);
-                    }
-                };
-                readLoop();
+                this.currentChannel.on('close', onClose);
             } else {
                 cleanup();
-                reject(new Error('No active channel available'));
+                reject(new Error('No active channel available for reading.'));
+            }
+        });
+    }
+
+    protected async readChannel(timeout: number = 2000): Promise<string> {
+        return new Promise((resolve, reject) => {
+            let buffer = '';
+            let timeoutId: NodeJS.Timeout;
+
+            const onData = (data: Buffer) => {
+                buffer += data.toString('utf8');
+            };
+
+            const cleanup = () => {
+                if(this.currentChannel) {
+                    this.currentChannel.removeListener('data', onData);
+                }
+                clearTimeout(timeoutId);
+            };
+
+            timeoutId = setTimeout(() => {
+                cleanup();
+                resolve(buffer);
+            }, timeout);
+
+            if (this.currentChannel) {
+                this.currentChannel.on('data', onData);
+            } else {
+                reject(new Error('No active channel to read from.'));
             }
         });
     }
@@ -249,41 +280,47 @@ export class LinuxConnection extends BaseConnection {
 
         // Remove command echo line (first line that contains the command)
         const commandIndex = lines.findIndex(line => line.includes(command));
-        if (commandIndex >= 0) {
+        if (commandIndex !== -1) {
             lines.splice(commandIndex, 1);
         }
 
-        // Remove prompt lines (lines ending with $ or #)
-        lines = lines.filter(line => {
-            const trimmed = line.trim();
-            return !trimmed.match(/[$#]\s*$/) || trimmed.length > 50; // Keep long lines even if they end with $/#
-        });
-
-        // Remove ANSI escape sequences
-        lines = lines.map(line => 
-            line.replace(/\x1b\[[0-9;]*[mK]/g, '')
-                .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
-                .replace(/\[?\?2004[lh]/g, '')
-        );
-
-        // Remove empty lines at start and end
-        while (lines.length > 0 && lines[0].trim() === '') {
-            lines.shift();
-        }
-        while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-            lines.pop();
+        // Remove prompt line (last line)
+        if (lines.length > 0) {
+            const lastLine = lines[lines.length - 1];
+            if (lastLine.includes(this.basePrompt)) {
+                lines.pop();
+            }
         }
 
-        const cleanOutput = lines.join('\n').trim();
+        // Re-join and trim
+        return lines.join('\n').trim();
+    }
+    
+    /**
+     * Disables terminal paging to prevent command output from being paused.
+     * This is equivalent to 'terminal length 0' or similar commands.
+     * For Linux, we try to set an unlimited history and disable pagination.
+     */
+    protected async disablePaging(): Promise<void> {
+        Logger.debug('Disabling terminal paging for Linux');
         
-        Logger.debug('Output sanitized', {
-            command,
-            cleanLength: cleanOutput.length,
-            originalLines: output.split(/\r?\n/).length,
-            cleanLines: lines.length
-        });
+        // These commands might not work on all systems, but are common.
+        const commands = [
+            'stty -echo', // Disable echo
+            'stty cols 512', // Set a large column width
+            'export HISTSIZE=0', // Disable history limit
+            'export HISTFILESIZE=0', // Disable history file limit
+        ];
 
-        return cleanOutput;
+        for (const cmd of commands) {
+            await this.writeChannel(cmd + this.newline);
+            await new Promise(resolve => setTimeout(resolve, 150)); // Small delay
+        }
+        
+        // Clear buffer after setting these
+        await this.readChannel(500);
+        
+        Logger.debug('Terminal paging disabled.');
     }
 
     async sendConfig(configCommands: string[]): Promise<CommandResult> {
