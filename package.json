@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-netdevices",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "n8n node to interact with network devices",
   "keywords": [
     "n8n-community-node-package",
