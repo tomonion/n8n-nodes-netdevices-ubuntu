@@ -123,10 +123,12 @@ export class LinuxConnection extends BaseConnection {
             Logger.debug('Sending Linux command', { command });
 
             await this.writeChannel(command + this.newline);
-            
+
+            Logger.debug('readUntilPattern: starting read', { command, prompt: this.basePrompt, timeout: this.commandTimeout });
             // Read until the prompt is found.
             // This reads both the command echo (if any) and the command output.
             const output = await this.readUntilPattern(this.basePrompt, this.commandTimeout);
+            Logger.debug('readUntilPattern: finished read', { command, outputLength: output.length });
 
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);
@@ -161,21 +163,24 @@ export class LinuxConnection extends BaseConnection {
         return new Promise((resolve, reject) => {
             const timeoutId = setTimeout(() => {
                 cleanup();
-                const msg = `Timeout waiting for pattern: ${pattern}. Last buffer content: ${buffer.slice(-200)}`;
+                const msg = `Timeout waiting for pattern: ${pattern}. Last buffer content: ${buffer.slice(-1000)}`;
                 Logger.error('Read until pattern timeout', {
                     pattern,
                     timeout,
                     bufferLength: buffer.length,
-                    bufferSample: buffer.slice(-200)
+                    bufferSample: buffer.slice(-1000),
                 });
                 reject(new Error(msg));
             }, timeout);
 
             const onData = (data: Buffer) => {
-                buffer += data.toString('utf8');
+                const chunk = data.toString('utf8');
+                buffer += chunk;
+                Logger.debug('readUntilPattern: data received', { length: chunk.length, totalBuffer: buffer.length });
                 // Check for the prompt pattern. A small delay can help stabilize reading on busy channels.
                 setTimeout(() => {
-                    if (promptRegex.test(buffer)) {
+                    if (this.currentChannel && promptRegex.test(buffer)) {
+                        Logger.debug('readUntilPattern: prompt found', { pattern });
                         cleanup();
                         resolve(buffer);
                     }
@@ -183,11 +188,13 @@ export class LinuxConnection extends BaseConnection {
             };
 
             const onError = (err: Error) => {
+                Logger.error('readUntilPattern: onError event', { error: err.message });
                 cleanup();
                 reject(err);
             };
-            
+
             const onClose = () => {
+                Logger.warn('readUntilPattern: onClose event. Channel is closing.');
                 cleanup();
                 reject(new Error('Channel closed while waiting for pattern.'));
             };
