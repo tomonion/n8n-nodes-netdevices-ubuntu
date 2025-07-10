@@ -71,6 +71,7 @@ export class BaseConnection extends EventEmitter {
         this.connectionPooling = connectionPooling;
         this.reuseConnection = reuseConnection;
         this.timeout = (credentials.timeout || 10) * 1000;
+        this.commandTimeout = (credentials.commandTimeout || 10) * 1000;
         this.lastActivity = Date.now();
         this.currentChannel = null;
         this.client = new Client();

@@ -126,7 +126,7 @@ export class LinuxConnection extends BaseConnection {
             
             // Read until the prompt is found.
             // This reads both the command echo (if any) and the command output.
-            const output = await this.readUntilPattern(this.basePrompt, 10000);
+            const output = await this.readUntilPattern(this.basePrompt, this.commandTimeout);
 
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);
