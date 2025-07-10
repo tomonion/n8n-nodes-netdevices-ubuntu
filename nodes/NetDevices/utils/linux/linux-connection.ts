@@ -17,7 +17,6 @@ try {
 
 export class LinuxConnection extends BaseConnection {
     protected basePrompt: string = '';
-    private isPromptRegex: boolean = false;
     private rootUser: boolean = false;
 
     constructor(credentials: DeviceCredentials) {
@@ -68,7 +67,7 @@ export class LinuxConnection extends BaseConnection {
                 setTimeout(() => {
                     Logger.debug('Shell channel created successfully');
                     resolve();
-                }, 500);
+                }, 2000);
             });
         });
     }
@@ -80,71 +79,39 @@ export class LinuxConnection extends BaseConnection {
     }
 
     protected async setBasePrompt(): Promise<void> {
-        Logger.debug('Setting base prompt for Linux by sending a newline.');
-
-        // First, clear any existing data in the buffer (e.g., banner)
-        await this.readChannel(500).catch(() => {
-            // Ignore errors, just trying to clear buffer
-        });
-
-        // Send a newline to trigger a fresh prompt
+        Logger.debug('Setting base prompt using Netmiko-style pattern matching.');
+        
+        // Send a newline to ensure a prompt is available
         await this.writeChannel(this.newline);
-
-        // Read the output that should now contain the prompt
-        const output = await this.readChannel(2000);
-        let detectedPrompt = '';
-
-        if (output) {
-            // Clean the output and get the last non-empty line
-            const cleanOutput = this.stripAnsi(output).trim();
-            const lines = cleanOutput.split('\n').filter(line => line.trim() !== '');
-            if (lines.length > 0) {
-                detectedPrompt = lines[lines.length - 1].trim();
-            }
-        }
-
-        if (detectedPrompt) {
-            // Try to create a robust regex from the detected prompt
-            const userHostMatch = detectedPrompt.match(/[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+/);
-            if (userHostMatch) {
-                const userHost = this.escapeRegex(userHostMatch[0]);
-                this.basePrompt = `${userHost}:.*[#$]\\s*$`;
-                this.isPromptRegex = true;
-                Logger.info('Determined dynamic base prompt regex', { basePrompt: this.basePrompt });
-            } else {
-                // Fallback to a literal prompt if no user@host pattern is found
-                this.basePrompt = detectedPrompt;
-                this.isPromptRegex = false;
-                Logger.info('Determined literal base prompt', { basePrompt: this.basePrompt });
-            }
-            await this.disablePaging();
-            return;
-        }
-
-        // Fallback if the primary method fails
-        Logger.warn('Primary prompt detection failed. Using fallback mechanism.');
+        
+        // Use a generic regex to find any common Linux prompt
+        const linuxPromptRegex = '[#$>]\\s*$';
+        let output = '';
         try {
-            await this.writeChannel(this.newline);
-            const fallbackOutput = await this.readUntilPattern('[#$>]\\s*$', 2000, true);
-            const fallbackLines = this.stripAnsi(fallbackOutput).trim().split('\n');
-            this.basePrompt = fallbackLines[fallbackLines.length - 1].trim();
-
-            if (this.basePrompt) {
-                this.isPromptRegex = false;
-                Logger.info('Determined base prompt using fallback', { basePrompt: this.basePrompt });
-                await this.disablePaging();
-                return;
-            }
-        } catch (error) {
-            Logger.error('Fallback prompt detection also failed.', {
-                 error: error instanceof Error ? error.message : String(error),
-            });
+            output = await this.readUntilPattern(linuxPromptRegex, 5000, true);
+        } catch(e) {
+             Logger.warn('Could not find prompt with initial method. Trying a second time.');
+             // Clear buffer before trying again
+             await this.readChannel(100).catch(()=>{});
+             await this.writeChannel(this.newline);
+             output = await this.readUntilPattern(linuxPromptRegex, 5000, true);
         }
 
-        // Final fallback if all methods fail
-        Logger.error('All prompt detection methods failed. Using a generic regex as a last resort.');
-        this.basePrompt = '[#$>]\\s*$'; // Match common prompt endings
-        this.isPromptRegex = true;
+        const cleanOutput = this.stripAnsi(output);
+        const lines = cleanOutput.trim().split('\n');
+        const newPrompt = lines[lines.length - 1].trim();
+
+        if (newPrompt) {
+            this.basePrompt = newPrompt;
+            Logger.info('Determined base prompt', { basePrompt: this.basePrompt });
+        } else {
+            // Final fallback if all methods fail
+            Logger.error('All prompt detection methods failed. Using a generic regex as a last resort.');
+            this.basePrompt = linuxPromptRegex;
+        }
+
+        // Disable paging after finding prompt
+        await this.disablePaging();
     }
 
     async sendCommand(command: string): Promise<CommandResult> {
@@ -159,7 +126,7 @@ export class LinuxConnection extends BaseConnection {
             
             // Read until the prompt is found.
             // This reads both the command echo (if any) and the command output.
-            const output = await this.readUntilPattern(this.basePrompt, 10000, this.isPromptRegex);
+            const output = await this.readUntilPattern(this.basePrompt, 10000);
 
             // Clean up the output
             const cleanOutput = this.sanitizeOutput(output, command);
@@ -187,6 +154,8 @@ export class LinuxConnection extends BaseConnection {
 
     private async readUntilPattern(pattern: string, timeout: number = 10000, isRegex: boolean = false): Promise<string> {
         let buffer = '';
+        
+        // If the pattern is not a regex, we still use regex but escape the pattern
         const promptRegex = isRegex ? new RegExp(pattern) : new RegExp(this.escapeRegex(pattern));
 
         return new Promise((resolve, reject) => {
@@ -291,12 +260,10 @@ export class LinuxConnection extends BaseConnection {
         // Remove prompt line (last line)
         if (lines.length > 0) {
             const lastLine = lines[lines.length - 1];
-            let promptFound = false;
-            if (this.isPromptRegex) {
-                promptFound = new RegExp(this.basePrompt).test(lastLine);
-            } else {
-                promptFound = lastLine.includes(this.basePrompt);
-            }
+            
+            // The prompt might be a regex, so test it appropriately
+            const promptPattern = new RegExp(this.basePrompt);
+            const promptFound = promptPattern.test(lastLine);
 
             if (promptFound) {
                 lines.pop();
