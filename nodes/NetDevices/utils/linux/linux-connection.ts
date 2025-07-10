@@ -188,15 +188,35 @@ export class LinuxConnection extends BaseConnection {
             };
 
             const onError = (err: Error) => {
-                Logger.error('readUntilPattern: onError event', { error: err.message });
+                Logger.error('readUntilPattern: onError event', {
+                    error: err.message,
+                    stack: err.stack,
+                    isChannel: !!this.currentChannel,
+                    isReadable: this.currentChannel ? this.currentChannel.readable : false,
+                    isWritable: this.currentChannel ? this.currentChannel.writable : false,
+                    isDestroyed: this.currentChannel ? this.currentChannel.destroyed : false,
+                });
                 cleanup();
                 reject(err);
             };
 
             const onClose = () => {
-                Logger.warn('readUntilPattern: onClose event. Channel is closing.');
+                Logger.warn('readUntilPattern: onClose event. Channel is closing.', {
+                    isChannel: !!this.currentChannel,
+                    isReadable: this.currentChannel ? this.currentChannel.readable : false,
+                    isWritable: this.currentChannel ? this.currentChannel.writable : false,
+                    isDestroyed: this.currentChannel ? this.currentChannel.destroyed : false,
+                    bufferLength: buffer.length,
+                    bufferSample: buffer.slice(-200),
+                });
                 cleanup();
-                reject(new Error('Channel closed while waiting for pattern.'));
+                // We check the buffer here one last time. It's possible data arrived right before the close event.
+                if (promptRegex.test(buffer)) {
+                    Logger.debug('readUntilPattern: prompt found in buffer after onClose event.');
+                    resolve(buffer);
+                } else {
+                    reject(new Error('Channel closed while waiting for pattern.'));
+                }
             };
 
             const cleanup = () => {
@@ -212,6 +232,7 @@ export class LinuxConnection extends BaseConnection {
                 this.currentChannel.on('data', onData);
                 this.currentChannel.on('error', onError);
                 this.currentChannel.on('close', onClose);
+                Logger.debug('readUntilPattern: Listeners attached.');
             } else {
                 cleanup();
                 reject(new Error('No active channel available for reading.'));

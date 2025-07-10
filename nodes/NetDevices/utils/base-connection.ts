@@ -528,13 +528,28 @@ export class BaseConnection extends EventEmitter {
     }
 
     protected async writeChannel(data: string): Promise<void> {
-        return new Promise((resolve) => {
-            if (this.currentChannel) {
-                this.currentChannel.write(data);
-                // Small delay to ensure data is sent
-                global.setTimeout(resolve, 50);
+        return new Promise((resolve, reject) => {
+            if (this.currentChannel && this.currentChannel.writable) {
+                Logger.debug('writeChannel: Writing to channel', { data: data.replace('\n', '\\n').replace('\r', '\\r') });
+                this.currentChannel.write(data, this.encoding, (err?: Error) => {
+                    if (err) {
+                        Logger.error('writeChannel: Channel write error', { error: err.message, stack: err.stack });
+                        reject(err);
+                    } else {
+                        Logger.debug('writeChannel: Channel write successful');
+                        // Small delay to ensure data is processed by the remote end
+                        setTimeout(resolve, 50);
+                    }
+                });
             } else {
-                resolve();
+                const msg = 'writeChannel: Cannot write to channel, it is not writable or does not exist.';
+                Logger.error(msg, {
+                    isChannel: !!this.currentChannel,
+                    isWritable: this.currentChannel ? this.currentChannel.writable : false,
+                    isReadable: this.currentChannel ? this.currentChannel.readable : false,
+                    isDestroyed: this.currentChannel ? this.currentChannel.destroyed : false,
+                });
+                reject(new Error(msg));
             }
         });
     }
