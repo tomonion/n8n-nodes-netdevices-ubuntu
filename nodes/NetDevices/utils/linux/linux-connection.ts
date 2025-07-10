@@ -115,43 +115,85 @@ export class LinuxConnection extends BaseConnection {
     }
 
     async sendCommand(command: string): Promise<CommandResult> {
-        try {
-            if (!this.isConnected || !this.currentChannel) {
-                throw new Error('Not connected to device');
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected || !this.client) {
+                const err = new Error('Not connected to device');
+                Logger.error('sendCommand: ' + err.message);
+                return reject(err);
             }
 
-            Logger.debug('Sending Linux command', { command });
+            Logger.debug('Executing Linux command via client.exec()', { command });
 
-            await this.writeChannel(command + this.newline);
+            let output = '';
+            let errorOutput = '';
+            let streamClosed = false;
+            let timeoutId: NodeJS.Timeout;
 
-            Logger.debug('readUntilPattern: starting read', { command, prompt: this.basePrompt, timeout: this.commandTimeout });
-            // Read until the prompt is found.
-            // This reads both the command echo (if any) and the command output.
-            const output = await this.readUntilPattern(this.basePrompt, this.commandTimeout);
-            Logger.debug('readUntilPattern: finished read', { command, outputLength: output.length });
-
-            // Clean up the output
-            const cleanOutput = this.sanitizeOutput(output, command);
-
-            return {
-                command,
-                output: cleanOutput,
-                success: true
+            const cleanup = () => {
+                if (timeoutId) clearTimeout(timeoutId);
             };
 
-        } catch (error) {
-            Logger.error('Linux command execution failed', {
-                command,
-                error: error instanceof Error ? error.message : String(error)
+            this.client.exec(command, (err, stream) => {
+                if (err) {
+                    Logger.error('sendCommand: Failed to execute command', { command, error: err.message });
+                    cleanup();
+                    return reject(err);
+                }
+
+                timeoutId = setTimeout(() => {
+                    const msg = `sendCommand: Command timeout after ${this.commandTimeout}ms`;
+                    Logger.error(msg, { command });
+                    cleanup();
+                    stream.close(); // Close the stream on timeout
+                    reject(new Error(msg));
+                }, this.commandTimeout);
+
+                stream.on('data', (data: Buffer) => {
+                    const chunk = data.toString('utf8');
+                    output += chunk;
+                    Logger.debug('sendCommand: stdout data received', { command, length: chunk.length });
+                });
+
+                stream.stderr.on('data', (data: Buffer) => {
+                    const chunk = data.toString('utf8');
+                    errorOutput += chunk;
+                    Logger.warn('sendCommand: stderr data received', { command, length: chunk.length });
+                });
+
+                stream.on('close', (code: number, signal: string) => {
+                    if (streamClosed) return;
+                    streamClosed = true;
+
+                    Logger.debug('sendCommand: stream closed', { command, code, signal });
+                    cleanup();
+
+                    if (errorOutput && !output) {
+                         // If there's only stderr, treat it as an error
+                        resolve({
+                            command,
+                            output: this.stripAnsi(errorOutput).trim(),
+                            success: false,
+                            error: `Command failed with exit code ${code || 'N/A'}`
+                        });
+                    } else {
+                        // Otherwise, return stdout (and stderr if present)
+                        const fullOutput = errorOutput ? `${output}\n--- STDERR ---\n${errorOutput}` : output;
+                        resolve({
+                            command,
+                            output: this.stripAnsi(fullOutput).trim(),
+                            success: code === 0,
+                            error: code !== 0 ? `Command failed with exit code ${code || 'N/A'}` : undefined
+                        });
+                    }
+                });
+
+                stream.on('error', (streamErr: Error) => {
+                     Logger.error('sendCommand: stream error', { command, error: streamErr.message });
+                     cleanup();
+                     reject(streamErr);
+                });
             });
-            
-            return {
-                command,
-                output: '',
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error'
-            };
-        }
+        });
     }
 
     private async readUntilPattern(pattern: string, timeout: number = 10000, isRegex: boolean = false): Promise<string> {
