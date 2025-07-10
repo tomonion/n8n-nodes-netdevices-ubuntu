@@ -173,10 +173,13 @@ export class LinuxConnection extends BaseConnection {
 
             const onData = (data: Buffer) => {
                 buffer += data.toString('utf8');
-                if (promptRegex.test(buffer)) {
-                    cleanup();
-                    resolve(buffer);
-                }
+                // Check for the prompt pattern. A small delay can help stabilize reading on busy channels.
+                setTimeout(() => {
+                    if (promptRegex.test(buffer)) {
+                        cleanup();
+                        resolve(buffer);
+                    }
+                }, 50);
             };
 
             const onError = (err: Error) => {
