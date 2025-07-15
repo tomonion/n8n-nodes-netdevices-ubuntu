@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-netdevices",
   "version": "1.0.25",
-  "description": "n8n node to interact with network devices (Cisco, Juniper, Palo Alto PAN-OS, Linux, etc.)",
+  "description": "n8n node to interact with network devices (Cisco, Juniper, Palo Alto PAN-OS, Ciena SAOS, Linux, etc.)",
   "keywords": [
     "n8n-community-node-package",
     "network-automation",
@@ -13,6 +13,11 @@
     "pan-os",
     "paloalto-networks",
     "firewall",
+    "ciena",
+    "saos",
+    "ciena-saos",
+    "optical",
+    "waveserver",
     "ssh",
     "network-devices",
     "netmiko",

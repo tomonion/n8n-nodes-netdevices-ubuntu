@@ -3,6 +3,7 @@ import { CiscoConnection, CiscoIOSXRConnection, CiscoSG300Connection } from './c
 import { JuniperConnection } from './juniper';
 import { LinuxConnection } from './linux';
 import { PaloAltoConnection } from './paloalto';
+import { CienaSaosConnection } from './ciena';
 
 export type SupportedDeviceType = 
     | 'cisco_ios'
@@ -14,6 +15,7 @@ export type SupportedDeviceType =
     | 'juniper_junos'
     | 'juniper_srx'
     | 'paloalto_panos'
+    | 'ciena_saos'
     | 'linux'
     | 'generic';
 
@@ -32,6 +34,7 @@ const CONNECTION_CLASS_MAPPING: ConnectionClassMapping = {
     'juniper_junos': JuniperConnection,
     'juniper_srx': JuniperConnection,
     'paloalto_panos': PaloAltoConnection,
+    'ciena_saos': CienaSaosConnection,
     'linux': LinuxConnection,
     'generic': BaseConnection
 };
@@ -88,6 +91,7 @@ export class ConnectionDispatcher {
             'juniper_junos': 'Juniper JunOS',
             'juniper_srx': 'Juniper SRX',
             'paloalto_panos': 'Palo Alto PAN-OS',
+            'ciena_saos': 'Ciena SAOS',
             'linux': 'Linux Server',
             'generic': 'Generic SSH'
         };
@@ -147,6 +151,11 @@ export class ConnectionDispatcher {
                 description: 'Palo Alto Networks firewalls'
             },
             {
+                name: 'Ciena SAOS',
+                value: 'ciena_saos',
+                description: 'Ciena SAOS switches and platforms'
+            },
+            {
                 name: 'Linux Server',
                 value: 'linux',
                 description: 'Linux servers and appliances'
@@ -200,6 +209,11 @@ export class ConnectionDispatcher {
                 } else {
                     return 'juniper_junos';
                 }
+            }
+
+            // Ciena detection patterns
+            if (output.includes('ciena') || output.includes('saos')) {
+                return 'ciena_saos';
             }
             
             // Palo Alto detection patterns

@@ -6,6 +6,7 @@ export { CiscoConnection, CiscoIOSXRConnection, CiscoSG300Connection } from './c
 export { JuniperConnection } from './juniper';
 export { LinuxConnection } from './linux';
 export { PaloAltoConnection } from './paloalto';
+export { CienaSaosConnection } from './ciena';
 
 // Connection dispatcher and utilities
 export { 
