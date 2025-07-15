@@ -2,6 +2,7 @@ import { BaseConnection, DeviceCredentials } from './base-connection';
 import { CiscoConnection, CiscoIOSXRConnection, CiscoSG300Connection } from './cisco';
 import { JuniperConnection } from './juniper';
 import { LinuxConnection } from './linux';
+import { PaloAltoConnection } from './paloalto';
 
 export type SupportedDeviceType = 
     | 'cisco_ios'
@@ -12,6 +13,7 @@ export type SupportedDeviceType =
     | 'cisco_sg300'
     | 'juniper_junos'
     | 'juniper_srx'
+    | 'paloalto_panos'
     | 'linux'
     | 'generic';
 
@@ -29,6 +31,7 @@ const CONNECTION_CLASS_MAPPING: ConnectionClassMapping = {
     'cisco_sg300': CiscoSG300Connection,
     'juniper_junos': JuniperConnection,
     'juniper_srx': JuniperConnection,
+    'paloalto_panos': PaloAltoConnection,
     'linux': LinuxConnection,
     'generic': BaseConnection
 };
@@ -84,6 +87,7 @@ export class ConnectionDispatcher {
             'cisco_sg300': 'Cisco SG300',
             'juniper_junos': 'Juniper JunOS',
             'juniper_srx': 'Juniper SRX',
+            'paloalto_panos': 'Palo Alto PAN-OS',
             'linux': 'Linux Server',
             'generic': 'Generic SSH'
         };
@@ -136,6 +140,11 @@ export class ConnectionDispatcher {
                 name: 'Juniper SRX',
                 value: 'juniper_srx',
                 description: 'Juniper SRX firewalls'
+            },
+            {
+                name: 'Palo Alto PAN-OS',
+                value: 'paloalto_panos',
+                description: 'Palo Alto Networks firewalls'
             },
             {
                 name: 'Linux Server',
@@ -191,6 +200,12 @@ export class ConnectionDispatcher {
                 } else {
                     return 'juniper_junos';
                 }
+            }
+            
+            // Palo Alto detection patterns
+            if (output.includes('palo alto') || output.includes('pan-os') || 
+                output.includes('panos') || output.includes('paloalto')) {
+                return 'paloalto_panos';
             }
             
             // Linux detection patterns
