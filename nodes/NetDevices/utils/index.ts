@@ -7,6 +7,7 @@ export { JuniperConnection } from './juniper';
 export { LinuxConnection } from './linux';
 export { PaloAltoConnection } from './paloalto';
 export { CienaSaosConnection } from './ciena';
+export { FortinetConnection } from './fortinet';
 
 // Connection dispatcher and utilities
 export { 

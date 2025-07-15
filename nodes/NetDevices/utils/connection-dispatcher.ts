@@ -4,6 +4,7 @@ import { JuniperConnection } from './juniper';
 import { LinuxConnection } from './linux';
 import { PaloAltoConnection } from './paloalto';
 import { CienaSaosConnection } from './ciena';
+import { FortinetConnection } from './fortinet';
 
 export type SupportedDeviceType = 
     | 'cisco_ios'
@@ -16,6 +17,7 @@ export type SupportedDeviceType =
     | 'juniper_srx'
     | 'paloalto_panos'
     | 'ciena_saos'
+    | 'fortinet_fortios'
     | 'linux'
     | 'generic';
 
@@ -35,6 +37,7 @@ const CONNECTION_CLASS_MAPPING: ConnectionClassMapping = {
     'juniper_srx': JuniperConnection,
     'paloalto_panos': PaloAltoConnection,
     'ciena_saos': CienaSaosConnection,
+    'fortinet_fortios': FortinetConnection,
     'linux': LinuxConnection,
     'generic': BaseConnection
 };
@@ -92,6 +95,7 @@ export class ConnectionDispatcher {
             'juniper_srx': 'Juniper SRX',
             'paloalto_panos': 'Palo Alto PAN-OS',
             'ciena_saos': 'Ciena SAOS',
+            'fortinet_fortios': 'Fortinet FortiOS',
             'linux': 'Linux Server',
             'generic': 'Generic SSH'
         };
@@ -156,6 +160,11 @@ export class ConnectionDispatcher {
                 description: 'Ciena SAOS switches and platforms'
             },
             {
+                name: 'Fortinet FortiOS',
+                value: 'fortinet_fortios',
+                description: 'Fortinet FortiOS firewalls and security appliances'
+            },
+            {
                 name: 'Linux Server',
                 value: 'linux',
                 description: 'Linux servers and appliances'
@@ -214,6 +223,12 @@ export class ConnectionDispatcher {
             // Ciena detection patterns
             if (output.includes('ciena') || output.includes('saos')) {
                 return 'ciena_saos';
+            }
+            
+            // Fortinet detection patterns
+            if (output.includes('fortinet') || output.includes('fortios') || 
+                output.includes('fortigate')) {
+                return 'fortinet_fortios';
             }
             
             // Palo Alto detection patterns
