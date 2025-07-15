@@ -2,9 +2,11 @@
 
 A TypeScript-based n8n custom node that provides Netmiko-like functionality for managing network devices via SSH. This node allows you to interact with network infrastructure including Cisco and Juniper routers, switches, and Linux servers directly from n8n workflows.
 
+**Now with Palo Alto PAN-OS support!**
+
 ## Features
 
-- **Multi-vendor support**: Cisco IOS/IOS-XE/NX-OS/ASA, Juniper JunOS/SRX, and Linux servers
+- **Multi-vendor support**: Cisco IOS/IOS-XE/NX-OS/ASA, Juniper JunOS/SRX, Palo Alto PAN-OS, and Linux servers
 - **Secure SSH connections**: Uses the ssh2 library for reliable and secure connections
 - **Dual authentication methods**: Support for both password and SSH key-based authentication
 - **Vendor-specific handling**: Automatically handles device-specific behaviors like enable mode, configuration mode, and command prompts
@@ -22,6 +24,7 @@ A TypeScript-based n8n custom node that provides Netmiko-like functionality for 
 - **Cisco SG300**: Small business switch series
 
 ### Other Vendors
+- **Palo Alto PAN-OS**: Palo Alto Networks firewalls (PA-series, VM-series, etc.)
 - **Juniper JunOS**: Juniper routers and switches
 - **Juniper SRX**: Juniper SRX firewall series
 - **Linux**: Linux servers and network appliances
