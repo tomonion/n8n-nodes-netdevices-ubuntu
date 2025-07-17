@@ -1,5 +1,5 @@
 import { Client, ConnectConfig } from 'ssh2';
-import { BaseConnection, DeviceCredentials, JumpHostConfig } from './base-connection';
+import { BaseConnection, DeviceCredentials } from './base-connection';
 
 // Try to import n8n's LoggerProxy for proper logging
 let Logger: any;
@@ -17,13 +17,11 @@ try {
 
 export class JumpHostConnection extends BaseConnection {
     private jumpHostClient: Client;
-    private jumpHostConfig: JumpHostConfig;
     private tunnelStream: any;
     private jumpHostConnected: boolean = false;
 
     constructor(credentials: DeviceCredentials) {
         super(credentials);
-        this.jumpHostConfig = credentials.jumpHost!;
         this.jumpHostClient = new Client();
         this.setupJumpHostEventHandlers();
     }
@@ -31,21 +29,21 @@ export class JumpHostConnection extends BaseConnection {
     private setupJumpHostEventHandlers(): void {
         this.jumpHostClient.on('error', (error) => {
             Logger.error('Jump host connection error', {
-                jumpHost: this.jumpHostConfig.host,
+                jumpHost: this.credentials.jumpHostHost,
                 error: error.message
             });
         });
 
         this.jumpHostClient.on('end', () => {
             Logger.info('Jump host connection ended', {
-                jumpHost: this.jumpHostConfig.host
+                jumpHost: this.credentials.jumpHostHost
             });
             this.jumpHostConnected = false;
         });
 
         this.jumpHostClient.on('close', () => {
             Logger.info('Jump host connection closed', {
-                jumpHost: this.jumpHostConfig.host
+                jumpHost: this.credentials.jumpHostHost
             });
             this.jumpHostConnected = false;
         });
@@ -53,9 +51,9 @@ export class JumpHostConnection extends BaseConnection {
 
     async connect(): Promise<void> {
         Logger.debug('Starting jump host connection process', {
-            jumpHost: this.jumpHostConfig.host,
+            jumpHost: this.credentials.jumpHostHost,
             target: this.credentials.host,
-            jumpHostAuthMethod: this.jumpHostConfig.authMethod,
+            jumpHostAuthMethod: this.credentials.jumpHostAuthMethod,
             targetAuthMethod: this.credentials.authMethod
         });
 
@@ -70,13 +68,13 @@ export class JumpHostConnection extends BaseConnection {
             await this.connectThroughTunnel();
             
             Logger.info('Jump host connection established successfully', {
-                jumpHost: this.jumpHostConfig.host,
+                jumpHost: this.credentials.jumpHostHost,
                 target: this.credentials.host
             });
 
         } catch (error) {
             Logger.error('Jump host connection failed', {
-                jumpHost: this.jumpHostConfig.host,
+                jumpHost: this.credentials.jumpHostHost,
                 target: this.credentials.host,
                 error: error instanceof Error ? error.message : String(error)
             });
@@ -88,37 +86,37 @@ export class JumpHostConnection extends BaseConnection {
     private async connectToJumpHost(): Promise<void> {
         return new Promise((resolve, reject) => {
             const connectConfig: ConnectConfig = {
-                host: this.jumpHostConfig.host,
-                port: this.jumpHostConfig.port,
-                username: this.jumpHostConfig.username,
+                host: this.credentials.jumpHostHost!,
+                port: this.credentials.jumpHostPort!,
+                username: this.credentials.jumpHostUsername!,
                 readyTimeout: this.timeout,
                 algorithms: this.getOptimizedAlgorithms()[0] // Use first algorithm set
             };
 
             // Configure jump host authentication
-            if (this.jumpHostConfig.authMethod === 'privateKey') {
-                connectConfig.privateKey = this.jumpHostConfig.privateKey;
-                if (this.jumpHostConfig.passphrase) {
-                    connectConfig.passphrase = this.jumpHostConfig.passphrase;
+            if (this.credentials.jumpHostAuthMethod === 'privateKey') {
+                connectConfig.privateKey = this.credentials.jumpHostPrivateKey;
+                if (this.credentials.jumpHostPassphrase) {
+                    connectConfig.passphrase = this.credentials.jumpHostPassphrase;
                 }
                 connectConfig.tryKeyboard = false;
             } else {
-                connectConfig.password = this.jumpHostConfig.password;
+                connectConfig.password = this.credentials.jumpHostPassword;
             }
 
             Logger.debug('Connecting to jump host', {
-                jumpHost: this.jumpHostConfig.host,
-                port: this.jumpHostConfig.port,
-                username: this.jumpHostConfig.username,
-                authMethod: this.jumpHostConfig.authMethod
+                jumpHost: this.credentials.jumpHostHost,
+                port: this.credentials.jumpHostPort,
+                username: this.credentials.jumpHostUsername,
+                authMethod: this.credentials.jumpHostAuthMethod
             });
 
             this.jumpHostClient.connect(connectConfig);
 
             this.jumpHostClient.once('ready', () => {
                 Logger.info('Jump host connection established', {
-                    jumpHost: this.jumpHostConfig.host,
-                    username: this.jumpHostConfig.username
+                    jumpHost: this.credentials.jumpHostHost,
+                    username: this.credentials.jumpHostUsername
                 });
                 this.jumpHostConnected = true;
                 resolve();
@@ -126,7 +124,7 @@ export class JumpHostConnection extends BaseConnection {
 
             this.jumpHostClient.once('error', (error) => {
                 Logger.error('Jump host connection failed', {
-                    jumpHost: this.jumpHostConfig.host,
+                    jumpHost: this.credentials.jumpHostHost,
                     error: error.message
                 });
                 reject(error);
@@ -137,7 +135,7 @@ export class JumpHostConnection extends BaseConnection {
     private async createOutboundTunnel(): Promise<void> {
         return new Promise((resolve, reject) => {
             Logger.debug('Creating outbound tunnel', {
-                jumpHost: this.jumpHostConfig.host,
+                jumpHost: this.credentials.jumpHostHost,
                 target: `${this.credentials.host}:${this.credentials.port}`
             });
 
@@ -148,7 +146,7 @@ export class JumpHostConnection extends BaseConnection {
                 (err, stream) => {
                     if (err) {
                         Logger.error('Tunnel creation failed', {
-                            jumpHost: this.jumpHostConfig.host,
+                            jumpHost: this.credentials.jumpHostHost,
                             target: `${this.credentials.host}:${this.credentials.port}`,
                             error: err.message
                         });
@@ -158,7 +156,7 @@ export class JumpHostConnection extends BaseConnection {
 
                     this.tunnelStream = stream;
                     Logger.info('Outbound tunnel created successfully', {
-                        jumpHost: this.jumpHostConfig.host,
+                        jumpHost: this.credentials.jumpHostHost,
                         target: `${this.credentials.host}:${this.credentials.port}`
                     });
                     resolve();
@@ -198,17 +196,17 @@ export class JumpHostConnection extends BaseConnection {
             this.client.connect(connectConfig);
 
             this.client.once('ready', () => {
-                Logger.info('Target connection established through tunnel', {
+                Logger.info('Target device connection established through jump host', {
                     target: this.credentials.host,
-                    jumpHost: this.jumpHostConfig.host
+                    username: this.credentials.username
                 });
+                this.isConnected = true;
                 resolve();
             });
 
             this.client.once('error', (error) => {
-                Logger.error('Target connection failed through tunnel', {
+                Logger.error('Target device connection through jump host failed', {
                     target: this.credentials.host,
-                    jumpHost: this.jumpHostConfig.host,
                     error: error.message
                 });
                 reject(error);
@@ -218,7 +216,7 @@ export class JumpHostConnection extends BaseConnection {
 
     async disconnect(): Promise<void> {
         Logger.debug('Disconnecting jump host connection', {
-            jumpHost: this.jumpHostConfig.host,
+            jumpHost: this.credentials.jumpHostHost,
             target: this.credentials.host
         });
 
@@ -228,7 +226,7 @@ export class JumpHostConnection extends BaseConnection {
 
     private async cleanup(): Promise<void> {
         Logger.debug('Cleaning up jump host resources', {
-            jumpHost: this.jumpHostConfig.host,
+            jumpHost: this.credentials.jumpHostHost,
             target: this.credentials.host
         });
 
@@ -250,7 +248,7 @@ export class JumpHostConnection extends BaseConnection {
         const baseInfo = super.getConnectionInfo();
         return {
             ...baseInfo,
-            jumpHost: this.jumpHostConfig.host
+            jumpHost: this.credentials.jumpHostHost
         };
     }
 } 

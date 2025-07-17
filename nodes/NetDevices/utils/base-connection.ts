@@ -43,9 +43,15 @@ export interface DeviceCredentials {
     commandTimeout?: number;
     reuseConnection?: boolean;
     connectionPooling?: boolean;
-    // Jump host configuration
+    // Jump host configuration (now at root level)
     useJumpHost?: boolean;
-    jumpHost?: JumpHostConfig;
+    jumpHostHost?: string;
+    jumpHostPort?: number;
+    jumpHostUsername?: string;
+    jumpHostAuthMethod?: 'password' | 'privateKey';
+    jumpHostPassword?: string;
+    jumpHostPrivateKey?: string;
+    jumpHostPassphrase?: string;
 }
 
 export interface CommandResult {
@@ -208,56 +214,42 @@ export class BaseConnection extends EventEmitter {
     }
 
     private validateJumpHostConfig(): void {
-        Logger.debug('Validating jump host configuration', {
+        Logger.debug('Validating jump host config', {
             useJumpHost: this.credentials.useJumpHost,
-            hasJumpHostConfig: !!this.credentials.jumpHost
+            hasJumpHostHost: !!this.credentials.jumpHostHost,
+            hasJumpHostUsername: !!this.credentials.jumpHostUsername,
+            jumpHostAuthMethod: this.credentials.jumpHostAuthMethod
         });
 
-        if (!this.credentials.jumpHost) {
-            throw new Error('Jump host configuration is required when useJumpHost is enabled');
+        if (!this.credentials.jumpHostHost) {
+            throw new Error('Jump host hostname/IP is required when useJumpHost is enabled');
         }
-
-        const jumpHost = this.credentials.jumpHost;
-
-        if (!jumpHost.host) {
-            throw new Error('Jump host hostname/IP is required');
+        if (!this.credentials.jumpHostPort) {
+            throw new Error('Jump host port is required when useJumpHost is enabled');
         }
-
-        if (!jumpHost.username) {
-            throw new Error('Jump host username is required');
+        if (!this.credentials.jumpHostUsername) {
+            throw new Error('Jump host username is required when useJumpHost is enabled');
         }
-
-        // Validate that jump host and target device are different
-        if (jumpHost.host === this.credentials.host && jumpHost.port === this.credentials.port) {
-            throw new Error('Jump host and target device cannot be the same');
+        if (!this.credentials.jumpHostAuthMethod) {
+            throw new Error('Jump host authentication method is required when useJumpHost is enabled');
         }
-
-        if (jumpHost.authMethod === 'privateKey') {
-            if (!jumpHost.privateKey) {
+        if (this.credentials.jumpHostAuthMethod === 'privateKey') {
+            if (!this.credentials.jumpHostPrivateKey) {
                 throw new Error('Jump host SSH private key is required for private key authentication');
             }
-            
-            // Check if private key looks valid
-            if (!jumpHost.privateKey.includes('-----BEGIN') || 
-                !jumpHost.privateKey.includes('-----END')) {
+            if (!this.credentials.jumpHostPrivateKey.includes('-----BEGIN') ||
+                !this.credentials.jumpHostPrivateKey.includes('-----END')) {
                 Logger.warn('Jump host private key may not be in correct format', {
-                    keyLength: jumpHost.privateKey.length,
-                    hasBeginMarker: jumpHost.privateKey.includes('-----BEGIN'),
-                    hasEndMarker: jumpHost.privateKey.includes('-----END')
+                    keyLength: this.credentials.jumpHostPrivateKey.length,
+                    hasBeginMarker: this.credentials.jumpHostPrivateKey.includes('-----BEGIN'),
+                    hasEndMarker: this.credentials.jumpHostPrivateKey.includes('-----END')
                 });
             }
         } else {
-            if (!jumpHost.password) {
+            if (!this.credentials.jumpHostPassword) {
                 throw new Error('Jump host password is required for password authentication');
             }
         }
-
-        Logger.debug('Jump host configuration validation passed', {
-            jumpHost: jumpHost.host,
-            jumpHostPort: jumpHost.port,
-            jumpHostUsername: jumpHost.username,
-            jumpHostAuthMethod: jumpHost.authMethod
-        });
     }
 
     private async tryConnect(): Promise<void> {

@@ -51,7 +51,7 @@ export class ConnectionDispatcher {
      */
     static createConnection(credentials: DeviceCredentials): BaseConnection {
         // Check if jump host is required
-        if (credentials.useJumpHost && credentials.jumpHost) {
+        if (credentials.useJumpHost && credentials.jumpHostHost && credentials.jumpHostPort && credentials.jumpHostUsername && credentials.jumpHostAuthMethod) {
             return new JumpHostConnection(credentials);
         }
         

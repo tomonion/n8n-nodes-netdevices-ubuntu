@@ -317,6 +317,18 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                 (deviceCredentials as any).enablePassword = credentials.enablePassword;
             }
 
+            // Add jump host fields if useJumpHost is enabled
+            if (credentials.useJumpHost) {
+                deviceCredentials.useJumpHost = true;
+                deviceCredentials.jumpHostHost = credentials.jumpHostHost;
+                deviceCredentials.jumpHostPort = credentials.jumpHostPort;
+                deviceCredentials.jumpHostUsername = credentials.jumpHostUsername;
+                deviceCredentials.jumpHostAuthMethod = credentials.jumpHostAuthMethod;
+                deviceCredentials.jumpHostPassword = credentials.jumpHostPassword;
+                deviceCredentials.jumpHostPrivateKey = credentials.jumpHostPrivateKey;
+                deviceCredentials.jumpHostPassphrase = credentials.jumpHostPassphrase;
+            }
+
             Logger.debug('Configured device credentials', {
                 host: deviceCredentials.host,
                 port: deviceCredentials.port,
