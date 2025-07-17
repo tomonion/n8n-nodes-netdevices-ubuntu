@@ -200,7 +200,7 @@ export class NetDevicesApi implements ICredentialType {
 					required: true,
 					displayOptions: {
 						show: {
-							authMethod: ['password'],
+							'jumpHost.authMethod': ['password'],
 						},
 					},
 					description: 'The password for jump host SSH authentication',
@@ -217,7 +217,7 @@ export class NetDevicesApi implements ICredentialType {
 					required: true,
 					displayOptions: {
 						show: {
-							authMethod: ['privateKey'],
+							'jumpHost.authMethod': ['privateKey'],
 						},
 					},
 					description: 'The SSH private key for jump host authentication',
@@ -231,7 +231,7 @@ export class NetDevicesApi implements ICredentialType {
 					required: false,
 					displayOptions: {
 						show: {
-							authMethod: ['privateKey'],
+							'jumpHost.authMethod': ['privateKey'],
 						},
 					},
 					description: 'The passphrase for jump host SSH private key',
