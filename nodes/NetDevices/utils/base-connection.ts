@@ -354,9 +354,21 @@ export class BaseConnection extends EventEmitter {
                 // Ensure proper line endings
                 normalizedKey = normalizedKey.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
                 
-                // Ensure the key has proper PEM format
-                if (!normalizedKey.startsWith('-----BEGIN') || !normalizedKey.endsWith('-----END')) {
-                    Logger.error('Private key does not have proper PEM format');
+                // Ensure the key has proper PEM format (check for various END markers)
+                const hasRsaEnd = normalizedKey.includes('-----END RSA PRIVATE KEY-----');
+                const hasPrivateKeyEnd = normalizedKey.includes('-----END PRIVATE KEY-----');
+                const hasOpenSshEnd = normalizedKey.includes('-----END OPENSSH PRIVATE KEY-----');
+                const hasEcEnd = normalizedKey.includes('-----END EC PRIVATE KEY-----');
+                
+                if (!normalizedKey.startsWith('-----BEGIN') || 
+                    !(hasRsaEnd || hasPrivateKeyEnd || hasOpenSshEnd || hasEcEnd)) {
+                    Logger.error('Private key does not have proper PEM format', {
+                        startsWithBegin: normalizedKey.startsWith('-----BEGIN'),
+                        hasRsaEnd,
+                        hasPrivateKeyEnd,
+                        hasOpenSshEnd,
+                        hasEcEnd
+                    });
                     reject(new Error('SSH private key must be in proper PEM format'));
                     return;
                 }

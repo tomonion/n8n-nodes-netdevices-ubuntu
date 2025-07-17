@@ -191,14 +191,27 @@ export class JumpHostConnection extends BaseConnection {
                 
                 // Additional debugging for key format issues
                 const trimmedKey = this.credentials.jumpHostPrivateKey.trim();
-                const hasProperFormat = trimmedKey.startsWith('-----BEGIN') && trimmedKey.endsWith('-----END');
+                
+                // Check for different END markers that might be present
+                const debugHasRsaEnd = trimmedKey.includes('-----END RSA PRIVATE KEY-----');
+                const debugHasPrivateKeyEnd = trimmedKey.includes('-----END PRIVATE KEY-----');
+                const debugHasOpenSshEnd = trimmedKey.includes('-----END OPENSSH PRIVATE KEY-----');
+                const debugHasEcEnd = trimmedKey.includes('-----END EC PRIVATE KEY-----');
+                
+                const hasProperFormat = trimmedKey.startsWith('-----BEGIN') && 
+                    (debugHasRsaEnd || debugHasPrivateKeyEnd || debugHasOpenSshEnd || debugHasEcEnd);
+                
                 Logger.debug('Jump host private key validation', {
                     trimmedLength: trimmedKey.length,
                     hasProperFormat,
                     startsWithBegin: trimmedKey.startsWith('-----BEGIN'),
-                    endsWithEnd: trimmedKey.endsWith('-----END'),
+                    hasRsaEnd: debugHasRsaEnd,
+                    hasPrivateKeyEnd: debugHasPrivateKeyEnd,
+                    hasOpenSshEnd: debugHasOpenSshEnd,
+                    hasEcEnd: debugHasEcEnd,
                     containsNewlines: trimmedKey.includes('\n'),
-                    containsCarriageReturns: trimmedKey.includes('\r')
+                    containsCarriageReturns: trimmedKey.includes('\r'),
+                    last50Chars: trimmedKey.substring(trimmedKey.length - 50)
                 });
                 
                 // Normalize the private key format to ensure compatibility
@@ -207,9 +220,21 @@ export class JumpHostConnection extends BaseConnection {
                 // Ensure proper line endings
                 normalizedKey = normalizedKey.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
                 
-                // Ensure the key has proper PEM format
-                if (!normalizedKey.startsWith('-----BEGIN') || !normalizedKey.endsWith('-----END')) {
-                    Logger.error('Jump host private key does not have proper PEM format');
+                // Ensure the key has proper PEM format (check for various END markers)
+                const hasRsaEnd = normalizedKey.includes('-----END RSA PRIVATE KEY-----');
+                const hasPrivateKeyEnd = normalizedKey.includes('-----END PRIVATE KEY-----');
+                const hasOpenSshEnd = normalizedKey.includes('-----END OPENSSH PRIVATE KEY-----');
+                const hasEcEnd = normalizedKey.includes('-----END EC PRIVATE KEY-----');
+                
+                if (!normalizedKey.startsWith('-----BEGIN') || 
+                    !(hasRsaEnd || hasPrivateKeyEnd || hasOpenSshEnd || hasEcEnd)) {
+                    Logger.error('Jump host private key does not have proper PEM format', {
+                        startsWithBegin: normalizedKey.startsWith('-----BEGIN'),
+                        hasRsaEnd,
+                        hasPrivateKeyEnd,
+                        hasOpenSshEnd,
+                        hasEcEnd
+                    });
                     reject(new Error('Jump host SSH private key must be in proper PEM format'));
                     return;
                 }
