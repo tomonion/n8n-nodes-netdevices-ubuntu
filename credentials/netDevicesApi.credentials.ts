@@ -131,5 +131,112 @@ export class NetDevicesApi implements ICredentialType {
 			default: true,
 			description: 'Send keep-alive packets to maintain the connection',
 		},
+		{
+			displayName: 'Use Jump Host',
+			name: 'useJumpHost',
+			type: 'boolean',
+			default: false,
+			description: 'Whether to connect through a jump host (bastion server)',
+		},
+		{
+			displayName: 'Jump Host Configuration',
+			name: 'jumpHost',
+			type: 'collection',
+			displayOptions: {
+				show: {
+					useJumpHost: [true],
+				},
+			},
+			default: {},
+			options: [
+				{
+					displayName: 'Jump Host Hostname/IP',
+					name: 'host',
+					type: 'string',
+					default: '',
+					required: true,
+					description: 'The hostname or IP address of the jump host',
+				},
+				{
+					displayName: 'Jump Host Port',
+					name: 'port',
+					type: 'number',
+					default: 22,
+					required: true,
+					description: 'The SSH port number for the jump host',
+				},
+				{
+					displayName: 'Jump Host Username',
+					name: 'username',
+					type: 'string',
+					default: '',
+					required: true,
+					description: 'The username for jump host SSH authentication',
+				},
+				{
+					displayName: 'Jump Host Authentication Method',
+					name: 'authMethod',
+					type: 'options',
+					options: [
+						{
+							name: 'Password',
+							value: 'password',
+						},
+						{
+							name: 'SSH Private Key',
+							value: 'privateKey',
+						},
+					],
+					default: 'password',
+					required: true,
+					description: 'The authentication method for jump host',
+				},
+				{
+					displayName: 'Jump Host Password',
+					name: 'password',
+					type: 'string',
+					typeOptions: { password: true },
+					default: '',
+					required: true,
+					displayOptions: {
+						show: {
+							authMethod: ['password'],
+						},
+					},
+					description: 'The password for jump host SSH authentication',
+				},
+				{
+					displayName: 'Jump Host SSH Private Key',
+					name: 'privateKey',
+					type: 'string',
+					typeOptions: { 
+						password: true,
+						rows: 5,
+					},
+					default: '',
+					required: true,
+					displayOptions: {
+						show: {
+							authMethod: ['privateKey'],
+						},
+					},
+					description: 'The SSH private key for jump host authentication',
+				},
+				{
+					displayName: 'Jump Host Private Key Passphrase',
+					name: 'passphrase',
+					type: 'string',
+					typeOptions: { password: true },
+					default: '',
+					required: false,
+					displayOptions: {
+						show: {
+							authMethod: ['privateKey'],
+						},
+					},
+					description: 'The passphrase for jump host SSH private key',
+				},
+			],
+		},
 	];
 }

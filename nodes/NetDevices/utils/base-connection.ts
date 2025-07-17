@@ -17,6 +17,17 @@ try {
     };
 }
 
+export interface JumpHostConfig {
+    host: string;
+    port: number;
+    username: string;
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+    authMethod: 'password' | 'privateKey';
+    timeout?: number;
+}
+
 export interface DeviceCredentials {
     host: string;
     port: number;
@@ -32,6 +43,9 @@ export interface DeviceCredentials {
     commandTimeout?: number;
     reuseConnection?: boolean;
     connectionPooling?: boolean;
+    // Jump host configuration
+    useJumpHost?: boolean;
+    jumpHost?: JumpHostConfig;
 }
 
 export interface CommandResult {
@@ -186,6 +200,64 @@ export class BaseConnection extends EventEmitter {
                 passwordLength: this.credentials.password.length
             });
         }
+
+        // Validate jump host configuration if enabled
+        if (this.credentials.useJumpHost) {
+            this.validateJumpHostConfig();
+        }
+    }
+
+    private validateJumpHostConfig(): void {
+        Logger.debug('Validating jump host configuration', {
+            useJumpHost: this.credentials.useJumpHost,
+            hasJumpHostConfig: !!this.credentials.jumpHost
+        });
+
+        if (!this.credentials.jumpHost) {
+            throw new Error('Jump host configuration is required when useJumpHost is enabled');
+        }
+
+        const jumpHost = this.credentials.jumpHost;
+
+        if (!jumpHost.host) {
+            throw new Error('Jump host hostname/IP is required');
+        }
+
+        if (!jumpHost.username) {
+            throw new Error('Jump host username is required');
+        }
+
+        // Validate that jump host and target device are different
+        if (jumpHost.host === this.credentials.host && jumpHost.port === this.credentials.port) {
+            throw new Error('Jump host and target device cannot be the same');
+        }
+
+        if (jumpHost.authMethod === 'privateKey') {
+            if (!jumpHost.privateKey) {
+                throw new Error('Jump host SSH private key is required for private key authentication');
+            }
+            
+            // Check if private key looks valid
+            if (!jumpHost.privateKey.includes('-----BEGIN') || 
+                !jumpHost.privateKey.includes('-----END')) {
+                Logger.warn('Jump host private key may not be in correct format', {
+                    keyLength: jumpHost.privateKey.length,
+                    hasBeginMarker: jumpHost.privateKey.includes('-----BEGIN'),
+                    hasEndMarker: jumpHost.privateKey.includes('-----END')
+                });
+            }
+        } else {
+            if (!jumpHost.password) {
+                throw new Error('Jump host password is required for password authentication');
+            }
+        }
+
+        Logger.debug('Jump host configuration validation passed', {
+            jumpHost: jumpHost.host,
+            jumpHostPort: jumpHost.port,
+            jumpHostUsername: jumpHost.username,
+            jumpHostAuthMethod: jumpHost.authMethod
+        });
     }
 
     private async tryConnect(): Promise<void> {
@@ -966,7 +1038,7 @@ export class BaseConnection extends EventEmitter {
     }
 
     // Get optimized SSH algorithms for faster connection
-    private getOptimizedAlgorithms(): any[] {
+    protected getOptimizedAlgorithms(): any[] {
         if (this.fastMode) {
             // Ultra-fast algorithms for speed-critical operations
             return [

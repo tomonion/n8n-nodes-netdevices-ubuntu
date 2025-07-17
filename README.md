@@ -8,6 +8,7 @@ A TypeScript-based n8n custom node that provides Netmiko-like functionality for 
 
 - **Multi-vendor support**: Cisco IOS/IOS-XE/NX-OS/ASA, Juniper JunOS/SRX, Palo Alto PAN-OS, and Linux servers
 - **Secure SSH connections**: Uses the ssh2 library for reliable and secure connections
+- **Jump host support**: Connect to devices through bastion servers for enterprise security
 - **Dual authentication methods**: Support for both password and SSH key-based authentication
 - **Vendor-specific handling**: Automatically handles device-specific behaviors like enable mode, configuration mode, and command prompts
 - **TypeScript implementation**: Full TypeScript support with proper typing and error handling
@@ -84,6 +85,8 @@ The node uses the "Net Devices API" credential type with the following fields:
 - **Enable Password**: (Cisco only) Password for privileged mode
 - **Connection Timeout**: Connection timeout in seconds
 - **Keep Alive**: Whether to send keep-alive packets
+- **Use Jump Host**: Whether to connect through a jump host (bastion server)
+- **Jump Host Configuration**: Jump host hostname, port, username, and authentication details
 
 #### SSH Key Authentication
 The node supports SSH key-based authentication as an alternative to password authentication:
@@ -93,6 +96,9 @@ The node supports SSH key-based authentication as an alternative to password aut
 - **Content-Based**: Paste the complete private key content (no file paths)
 
 For detailed SSH key setup instructions, see [SSH_KEY_AUTH_GUIDE.md](SSH_KEY_AUTH_GUIDE.md).
+
+### Jump Host Support
+For enterprise environments requiring access through bastion servers, the node supports jump host connections. See the comprehensive guide: [JUMP_HOST_GUIDE.md](JUMP_HOST_GUIDE.md).
 
 ### Troubleshooting SSH Timeouts
 If you experience SSH timeout issues, especially with Linux servers or SSH key authentication, see the comprehensive troubleshooting guide: [SSH_TIMEOUT_TROUBLESHOOTING.md](SSH_TIMEOUT_TROUBLESHOOTING.md).

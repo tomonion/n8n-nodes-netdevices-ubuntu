@@ -5,6 +5,7 @@ import { LinuxConnection } from './linux';
 import { PaloAltoConnection } from './paloalto';
 import { CienaSaosConnection } from './ciena';
 import { FortinetConnection } from './fortinet';
+import { JumpHostConnection } from './jump-host-connection';
 
 export type SupportedDeviceType = 
     | 'cisco_ios'
@@ -49,6 +50,12 @@ export class ConnectionDispatcher {
      * @returns Connection instance
      */
     static createConnection(credentials: DeviceCredentials): BaseConnection {
+        // Check if jump host is required
+        if (credentials.useJumpHost && credentials.jumpHost) {
+            return new JumpHostConnection(credentials);
+        }
+        
+        // Existing logic for direct connections
         const deviceType = credentials.deviceType.toLowerCase();
         
         // Check if the device type is supported
