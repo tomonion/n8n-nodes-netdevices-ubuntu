@@ -96,12 +96,68 @@ export class JumpHostConnection extends BaseConnection {
                 hasPassword: !!this.credentials.jumpHostPassword
             });
 
+            // Use the same algorithm selection logic as base connection
+            const algorithms = this.getOptimizedAlgorithms();
+            Logger.debug('Trying jump host SSH connection with algorithm configurations', {
+                algorithmCount: algorithms.length,
+                authMethod: this.credentials.jumpHostAuthMethod
+            });
+
+            // Try each algorithm configuration
+            let lastError: Error | null = null;
+            let algorithmIndex = 0;
+
+            const tryNextAlgorithm = () => {
+                if (algorithmIndex >= algorithms.length) {
+                    Logger.error('All jump host SSH algorithm configurations failed', {
+                        jumpHost: this.credentials.jumpHostHost,
+                        authMethod: this.credentials.jumpHostAuthMethod,
+                        lastError: lastError?.message
+                    });
+                    reject(lastError || new Error('All SSH algorithm configurations failed'));
+                    return;
+                }
+
+                const currentAlgorithms = algorithms[algorithmIndex];
+                Logger.debug('Attempting jump host connection with algorithm config', {
+                    algorithmIndex: algorithmIndex + 1,
+                    total: algorithms.length,
+                    algorithms: currentAlgorithms
+                });
+
+                this.tryJumpHostConnectWithConfig(currentAlgorithms)
+                    .then(() => {
+                        Logger.info('Jump host connection established with algorithm config', {
+                            algorithmIndex: algorithmIndex + 1,
+                            jumpHost: this.credentials.jumpHostHost
+                        });
+                        resolve();
+                    })
+                    .catch((error) => {
+                        lastError = error;
+                        algorithmIndex++;
+                        Logger.warn('Jump host connection failed with algorithm config', {
+                            algorithmIndex: algorithmIndex,
+                            jumpHost: this.credentials.jumpHostHost,
+                            error: error.message
+                        });
+                        // Try next algorithm configuration
+                        setTimeout(tryNextAlgorithm, 100);
+                    });
+            };
+
+            tryNextAlgorithm();
+        });
+    }
+
+    private async tryJumpHostConnectWithConfig(algorithms: any): Promise<void> {
+        return new Promise((resolve, reject) => {
             const connectConfig: ConnectConfig = {
                 host: this.credentials.jumpHostHost!,
                 port: this.credentials.jumpHostPort!,
                 username: this.credentials.jumpHostUsername!,
                 readyTimeout: this.timeout,
-                algorithms: this.getOptimizedAlgorithms()[0] // Use first algorithm set
+                algorithms: algorithms
             };
 
             // Configure jump host authentication
@@ -123,6 +179,19 @@ export class JumpHostConnection extends BaseConnection {
                     reject(new Error('Jump host SSH private key must be in PEM format (include -----BEGIN and -----END markers)'));
                     return;
                 }
+                
+                // Debug: Show key format details
+                const keyLines = this.credentials.jumpHostPrivateKey.split('\n');
+                Logger.debug('Jump host private key format details', {
+                    keyLength: this.credentials.jumpHostPrivateKey.length,
+                    lineCount: keyLines.length,
+                    firstLine: keyLines[0]?.trim(),
+                    lastLine: keyLines[keyLines.length - 1]?.trim(),
+                    hasBeginMarker: this.credentials.jumpHostPrivateKey.includes('-----BEGIN'),
+                    hasEndMarker: this.credentials.jumpHostPrivateKey.includes('-----END'),
+                    keyStart: this.credentials.jumpHostPrivateKey.substring(0, 50) + '...',
+                    keyEnd: '...' + this.credentials.jumpHostPrivateKey.substring(this.credentials.jumpHostPrivateKey.length - 50)
+                });
                 
                 connectConfig.privateKey = this.credentials.jumpHostPrivateKey;
                 
@@ -163,7 +232,18 @@ export class JumpHostConnection extends BaseConnection {
                 authMethod: this.credentials.jumpHostAuthMethod
             });
 
-            this.jumpHostClient.connect(connectConfig);
+            try {
+                this.jumpHostClient.connect(connectConfig);
+            } catch (error) {
+                Logger.error('Failed to initiate jump host SSH connection', {
+                    error: error instanceof Error ? error.message : String(error),
+                    jumpHost: this.credentials.jumpHostHost,
+                    port: this.credentials.jumpHostPort,
+                    authMethod: this.credentials.jumpHostAuthMethod
+                });
+                reject(error);
+                return;
+            }
 
             this.jumpHostClient.once('ready', () => {
                 Logger.info('Jump host connection established', {
@@ -303,5 +383,74 @@ export class JumpHostConnection extends BaseConnection {
             ...baseInfo,
             jumpHost: this.credentials.jumpHostHost
         };
+    }
+
+    // Override to use jump host authentication method for algorithm selection
+    protected getOptimizedAlgorithms(): any[] {
+        if (this.fastMode) {
+            // Ultra-fast algorithms for speed-critical operations
+            return [
+                {
+                    serverHostKey: ['ssh-rsa', 'ecdsa-sha2-nistp256'],
+                    cipher: ['aes128-ctr', 'aes128-cbc'],
+                    hmac: ['hmac-sha1'],
+                    kex: ['diffie-hellman-group14-sha1', 'ecdh-sha2-nistp256']
+                }
+            ];
+        } else {
+            // Optimized algorithms for SSH key authentication
+            const keyBasedAlgorithms = {
+                serverHostKey: [
+                    'ssh-rsa', 'rsa-sha2-256', 'rsa-sha2-512',
+                    'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
+                    'ssh-ed25519'
+                ],
+                cipher: [
+                    'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+                    'aes128-gcm@openssh.com', 'aes256-gcm@openssh.com',
+                    'aes128-cbc', 'aes192-cbc'
+                ],
+                hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1'],
+                kex: [
+                    'curve25519-sha256', 'curve25519-sha256@libssh.org',
+                    'diffie-hellman-group16-sha512', 'diffie-hellman-group18-sha512',
+                    'diffie-hellman-group14-sha256', 'ecdh-sha2-nistp256',
+                    'diffie-hellman-group14-sha1'
+                ]
+            };
+
+            // Password-based algorithms (more conservative)
+            const passwordBasedAlgorithms = {
+                serverHostKey: [
+                    'ssh-rsa', 'rsa-sha2-256', 'ecdsa-sha2-nistp256', 
+                    'ecdsa-sha2-nistp384', 'ssh-ed25519'
+                ],
+                cipher: [
+                    'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+                    'aes128-cbc', 'aes192-cbc'
+                ],
+                hmac: ['hmac-sha2-256', 'hmac-sha1'],
+                kex: [
+                    'diffie-hellman-group14-sha256', 'ecdh-sha2-nistp256',
+                    'diffie-hellman-group14-sha1'
+                ]
+            };
+
+            // Choose algorithm set based on jump host authentication method
+            const primaryAlgorithms = this.credentials.jumpHostAuthMethod === 'privateKey' 
+                ? keyBasedAlgorithms 
+                : passwordBasedAlgorithms;
+
+            return [
+                primaryAlgorithms,
+                // Fallback for older systems
+                {
+                    serverHostKey: ['ssh-rsa'],
+                    cipher: ['aes128-cbc'],
+                    hmac: ['hmac-sha1'],
+                    kex: ['diffie-hellman-group1-sha1']
+                }
+            ];
+        }
     }
 } 
