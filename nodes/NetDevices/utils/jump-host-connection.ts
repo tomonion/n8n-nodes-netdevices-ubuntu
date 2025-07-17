@@ -85,6 +85,17 @@ export class JumpHostConnection extends BaseConnection {
 
     private async connectToJumpHost(): Promise<void> {
         return new Promise((resolve, reject) => {
+            Logger.debug('Preparing jump host SSH connection configuration', {
+                jumpHost: this.credentials.jumpHostHost,
+                port: this.credentials.jumpHostPort,
+                username: this.credentials.jumpHostUsername,
+                connectionTimeout: this.timeout,
+                authMethod: this.credentials.jumpHostAuthMethod,
+                hasPrivateKey: !!this.credentials.jumpHostPrivateKey,
+                hasPassphrase: !!this.credentials.jumpHostPassphrase,
+                hasPassword: !!this.credentials.jumpHostPassword
+            });
+
             const connectConfig: ConnectConfig = {
                 host: this.credentials.jumpHostHost!,
                 port: this.credentials.jumpHostPort!,
@@ -95,13 +106,54 @@ export class JumpHostConnection extends BaseConnection {
 
             // Configure jump host authentication
             if (this.credentials.jumpHostAuthMethod === 'privateKey') {
-                connectConfig.privateKey = this.credentials.jumpHostPrivateKey;
-                if (this.credentials.jumpHostPassphrase) {
-                    connectConfig.passphrase = this.credentials.jumpHostPassphrase;
+                if (!this.credentials.jumpHostPrivateKey) {
+                    Logger.error('Jump host SSH private key is missing for private key authentication');
+                    reject(new Error('Jump host SSH private key is required for private key authentication'));
+                    return;
                 }
+                
+                // Validate private key format
+                if (!this.credentials.jumpHostPrivateKey.includes('-----BEGIN') || 
+                    !this.credentials.jumpHostPrivateKey.includes('-----END')) {
+                    Logger.error('Jump host private key format is invalid', {
+                        keyLength: this.credentials.jumpHostPrivateKey.length,
+                        hasBeginMarker: this.credentials.jumpHostPrivateKey.includes('-----BEGIN'),
+                        hasEndMarker: this.credentials.jumpHostPrivateKey.includes('-----END')
+                    });
+                    reject(new Error('Jump host SSH private key must be in PEM format (include -----BEGIN and -----END markers)'));
+                    return;
+                }
+                
+                connectConfig.privateKey = this.credentials.jumpHostPrivateKey;
+                
+                // Handle passphrase - only add if it's not empty
+                if (this.credentials.jumpHostPassphrase && this.credentials.jumpHostPassphrase.trim() !== '') {
+                    connectConfig.passphrase = this.credentials.jumpHostPassphrase;
+                    Logger.debug('Using passphrase for jump host private key', {
+                        passphraseLength: this.credentials.jumpHostPassphrase.length
+                    });
+                } else {
+                    Logger.debug('No passphrase provided for jump host private key');
+                }
+                
                 connectConfig.tryKeyboard = false;
+                
+                Logger.debug('Configured jump host SSH private key authentication', {
+                    keyLength: this.credentials.jumpHostPrivateKey.length,
+                    hasPassphrase: !!connectConfig.passphrase,
+                    tryKeyboard: connectConfig.tryKeyboard
+                });
             } else {
+                if (!this.credentials.jumpHostPassword) {
+                    Logger.error('Jump host password is missing for password authentication');
+                    reject(new Error('Jump host password is required for password authentication'));
+                    return;
+                }
                 connectConfig.password = this.credentials.jumpHostPassword;
+                
+                Logger.debug('Configured jump host SSH password authentication', {
+                    passwordLength: this.credentials.jumpHostPassword.length
+                });
             }
 
             Logger.debug('Connecting to jump host', {
@@ -125,7 +177,8 @@ export class JumpHostConnection extends BaseConnection {
             this.jumpHostClient.once('error', (error) => {
                 Logger.error('Jump host connection failed', {
                     jumpHost: this.credentials.jumpHostHost,
-                    error: error.message
+                    error: error.message,
+                    authMethod: this.credentials.jumpHostAuthMethod
                 });
                 reject(error);
             });
