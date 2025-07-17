@@ -348,7 +348,20 @@ export class BaseConnection extends EventEmitter {
                     reject(new Error('SSH private key is required for private key authentication'));
                     return;
                 }
-                connectConfig.privateKey = this.credentials.privateKey;
+                // Normalize the private key format to ensure compatibility
+                let normalizedKey = this.credentials.privateKey.trim();
+                
+                // Ensure proper line endings
+                normalizedKey = normalizedKey.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                
+                // Ensure the key has proper PEM format
+                if (!normalizedKey.startsWith('-----BEGIN') || !normalizedKey.endsWith('-----END')) {
+                    Logger.error('Private key does not have proper PEM format');
+                    reject(new Error('SSH private key must be in proper PEM format'));
+                    return;
+                }
+                
+                connectConfig.privateKey = normalizedKey;
                 
                 // Handle passphrase - only add if it's not empty
                 if (this.credentials.passphrase && this.credentials.passphrase.trim() !== '') {

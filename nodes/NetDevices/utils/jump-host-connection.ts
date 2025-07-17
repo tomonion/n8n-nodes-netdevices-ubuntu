@@ -180,20 +180,41 @@ export class JumpHostConnection extends BaseConnection {
                     return;
                 }
                 
-                // Debug: Show key format details
+                // Debug: Show key format details (without exposing key content)
                 const keyLines = this.credentials.jumpHostPrivateKey.split('\n');
                 Logger.debug('Jump host private key format details', {
                     keyLength: this.credentials.jumpHostPrivateKey.length,
                     lineCount: keyLines.length,
-                    firstLine: keyLines[0]?.trim(),
-                    lastLine: keyLines[keyLines.length - 1]?.trim(),
                     hasBeginMarker: this.credentials.jumpHostPrivateKey.includes('-----BEGIN'),
-                    hasEndMarker: this.credentials.jumpHostPrivateKey.includes('-----END'),
-                    keyStart: this.credentials.jumpHostPrivateKey.substring(0, 50) + '...',
-                    keyEnd: '...' + this.credentials.jumpHostPrivateKey.substring(this.credentials.jumpHostPrivateKey.length - 50)
+                    hasEndMarker: this.credentials.jumpHostPrivateKey.includes('-----END')
                 });
                 
-                connectConfig.privateKey = this.credentials.jumpHostPrivateKey;
+                // Additional debugging for key format issues
+                const trimmedKey = this.credentials.jumpHostPrivateKey.trim();
+                const hasProperFormat = trimmedKey.startsWith('-----BEGIN') && trimmedKey.endsWith('-----END');
+                Logger.debug('Jump host private key validation', {
+                    trimmedLength: trimmedKey.length,
+                    hasProperFormat,
+                    startsWithBegin: trimmedKey.startsWith('-----BEGIN'),
+                    endsWithEnd: trimmedKey.endsWith('-----END'),
+                    containsNewlines: trimmedKey.includes('\n'),
+                    containsCarriageReturns: trimmedKey.includes('\r')
+                });
+                
+                // Normalize the private key format to ensure compatibility
+                let normalizedKey = this.credentials.jumpHostPrivateKey.trim();
+                
+                // Ensure proper line endings
+                normalizedKey = normalizedKey.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                
+                // Ensure the key has proper PEM format
+                if (!normalizedKey.startsWith('-----BEGIN') || !normalizedKey.endsWith('-----END')) {
+                    Logger.error('Jump host private key does not have proper PEM format');
+                    reject(new Error('Jump host SSH private key must be in proper PEM format'));
+                    return;
+                }
+                
+                connectConfig.privateKey = normalizedKey;
                 
                 // Handle passphrase - only add if it's not empty
                 if (this.credentials.jumpHostPassphrase && this.credentials.jumpHostPassphrase.trim() !== '') {
@@ -237,9 +258,11 @@ export class JumpHostConnection extends BaseConnection {
             } catch (error) {
                 Logger.error('Failed to initiate jump host SSH connection', {
                     error: error instanceof Error ? error.message : String(error),
+                    errorStack: error instanceof Error ? error.stack : undefined,
                     jumpHost: this.credentials.jumpHostHost,
                     port: this.credentials.jumpHostPort,
-                    authMethod: this.credentials.jumpHostAuthMethod
+                    authMethod: this.credentials.jumpHostAuthMethod,
+                    connectConfigKeys: Object.keys(connectConfig).filter(key => key !== 'privateKey' && key !== 'password' && key !== 'passphrase')
                 });
                 reject(error);
                 return;
@@ -258,7 +281,10 @@ export class JumpHostConnection extends BaseConnection {
                 Logger.error('Jump host connection failed', {
                     jumpHost: this.credentials.jumpHostHost,
                     error: error.message,
-                    authMethod: this.credentials.jumpHostAuthMethod
+                    errorStack: error.stack,
+                    authMethod: this.credentials.jumpHostAuthMethod,
+                    errorLevel: (error as any).level,
+                    errorDescription: (error as any).description
                 });
                 reject(error);
             });
