@@ -38,13 +38,33 @@ export function formatSSHPrivateKey(privateKey: string): string {
 
     // Check if key already has proper format
     if (formattedKey.includes('-----BEGIN') && formattedKey.includes('-----END')) {
-        // Key appears to be in PEM format, validate it
+        // Key appears to be in PEM format, validate and clean it
         const lines = formattedKey.split('\n');
         const beginIndex = lines.findIndex(line => line.includes('-----BEGIN'));
         const endIndex = lines.findIndex(line => line.includes('-----END'));
 
         if (beginIndex !== -1 && endIndex !== -1 && endIndex > beginIndex) {
-            // Key is properly formatted, return as is
+            // Extract the key content between BEGIN and END markers
+            const keyLines = lines.slice(beginIndex, endIndex + 1);
+            
+            // Clean up each line - remove extra whitespace but preserve content
+            const cleanedLines = keyLines.map(line => {
+                if (line.includes('-----BEGIN') || line.includes('-----END')) {
+                    return line.trim();
+                } else {
+                    // For content lines, preserve the base64 content but trim whitespace
+                    return line.trim();
+                }
+            });
+            
+            // Reconstruct the key with proper formatting
+            formattedKey = cleanedLines.join('\n');
+            
+            // Ensure there's a newline at the end
+            if (!formattedKey.endsWith('\n')) {
+                formattedKey += '\n';
+            }
+            
             return formattedKey;
         }
     }

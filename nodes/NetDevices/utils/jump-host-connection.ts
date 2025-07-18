@@ -171,7 +171,7 @@ export class JumpHostConnection extends BaseConnection {
                 try {
                     // Validate and format the jump host private key
                     validateSSHPrivateKey(this.credentials.jumpHostPrivateKey);
-                    const normalizedKey = formatSSHPrivateKey(this.credentials.jumpHostPrivateKey);
+                    let normalizedKey = formatSSHPrivateKey(this.credentials.jumpHostPrivateKey);
                     
                     Logger.debug('Jump host private key validation and formatting successful', {
                         originalLength: this.credentials.jumpHostPrivateKey.length,
@@ -179,6 +179,35 @@ export class JumpHostConnection extends BaseConnection {
                         hasBeginMarker: normalizedKey.includes('-----BEGIN'),
                         hasEndMarker: normalizedKey.includes('-----END')
                     });
+                    
+                    // Additional debugging for ssh2 compatibility
+                    const keyLines = normalizedKey.split('\n');
+                    Logger.debug('Jump host private key format details', {
+                        totalLines: keyLines.length,
+                        firstLine: keyLines[0]?.substring(0, 50),
+                        lastLine: keyLines[keyLines.length - 1]?.substring(0, 50),
+                        hasEmptyLines: keyLines.some(line => line.trim() === ''),
+                        lineLengths: keyLines.map(line => line.length).slice(0, 5)
+                    });
+                    
+                    // Try to detect and fix common ssh2 compatibility issues
+                    if (normalizedKey.includes('-----BEGIN OPENSSH PRIVATE KEY-----')) {
+                        // OpenSSH keys sometimes need special handling
+                        Logger.debug('Detected OpenSSH format key, ensuring proper formatting');
+                        // Ensure no extra whitespace in OpenSSH keys
+                        normalizedKey = normalizedKey.replace(/\n\s*\n/g, '\n').trim() + '\n';
+                    } else if (normalizedKey.includes('-----BEGIN RSA PRIVATE KEY-----')) {
+                        // RSA keys need proper line wrapping
+                        Logger.debug('Detected RSA format key, ensuring proper line wrapping');
+                        const lines = normalizedKey.split('\n');
+                        const header = lines[0];
+                        const footer = lines[lines.length - 1];
+                        const content = lines.slice(1, -1).join('').replace(/\s/g, '');
+                        
+                        // Re-wrap content in 64-character lines
+                        const wrappedContent = content.match(/.{1,64}/g)?.join('\n') || content;
+                        normalizedKey = `${header}\n${wrappedContent}\n${footer}`;
+                    }
                     
                     connectConfig.privateKey = normalizedKey;
                 } catch (keyError) {
