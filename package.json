@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-netdevices",
-  "version": "1.0.36",
+  "version": "1.0.37",
   "description": "n8n node to interact with network devices (Cisco, Juniper, Palo Alto PAN-OS, Ciena SAOS, Linux, etc.)",
   "keywords": [
     "n8n-community-node-package",
