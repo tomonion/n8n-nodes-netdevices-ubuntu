@@ -40,33 +40,66 @@ export function formatSSHPrivateKey(privateKey: string): string {
     if (formattedKey.includes('-----BEGIN') && formattedKey.includes('-----END')) {
         // Key appears to be in PEM format, validate and clean it
         const lines = formattedKey.split('\n');
-        const beginIndex = lines.findIndex(line => line.includes('-----BEGIN'));
-        const endIndex = lines.findIndex(line => line.includes('-----END'));
-
-        if (beginIndex !== -1 && endIndex !== -1 && endIndex > beginIndex) {
-            // Extract the key content between BEGIN and END markers
-            const keyLines = lines.slice(beginIndex, endIndex + 1);
-            
-            // Clean up each line - remove extra whitespace but preserve content
-            const cleanedLines = keyLines.map(line => {
-                if (line.includes('-----BEGIN') || line.includes('-----END')) {
-                    return line.trim();
-                } else {
-                    // For content lines, preserve the base64 content but trim whitespace
-                    return line.trim();
+        
+        // Check if this is a single-line key that needs to be properly formatted
+        if (lines.length === 1) {
+            // Handle single-line RSA key
+            if (formattedKey.includes('-----BEGIN RSA PRIVATE KEY-----')) {
+                const beginMatch = formattedKey.match(/-----BEGIN RSA PRIVATE KEY-----(.*)-----END RSA PRIVATE KEY-----/);
+                if (beginMatch) {
+                    const content = beginMatch[1].trim().replace(/\s/g, '');
+                    const wrappedContent = content.match(/.{1,64}/g)?.join('\n') || content;
+                    formattedKey = `-----BEGIN RSA PRIVATE KEY-----\n${wrappedContent}\n-----END RSA PRIVATE KEY-----`;
                 }
-            });
-            
-            // Reconstruct the key with proper formatting
-            formattedKey = cleanedLines.join('\n');
-            
-            // Ensure there's a newline at the end
-            if (!formattedKey.endsWith('\n')) {
-                formattedKey += '\n';
             }
-            
-            return formattedKey;
+            // Handle single-line OpenSSH key
+            else if (formattedKey.includes('-----BEGIN OPENSSH PRIVATE KEY-----')) {
+                const beginMatch = formattedKey.match(/-----BEGIN OPENSSH PRIVATE KEY-----(.*)-----END OPENSSH PRIVATE KEY-----/);
+                if (beginMatch) {
+                    const content = beginMatch[1].trim().replace(/\s/g, '');
+                    const wrappedContent = content.match(/.{1,64}/g)?.join('\n') || content;
+                    formattedKey = `-----BEGIN OPENSSH PRIVATE KEY-----\n${wrappedContent}\n-----END OPENSSH PRIVATE KEY-----`;
+                }
+            }
+            // Handle other single-line key formats
+            else if (formattedKey.includes('-----BEGIN PRIVATE KEY-----')) {
+                const beginMatch = formattedKey.match(/-----BEGIN PRIVATE KEY-----(.*)-----END PRIVATE KEY-----/);
+                if (beginMatch) {
+                    const content = beginMatch[1].trim().replace(/\s/g, '');
+                    const wrappedContent = content.match(/.{1,64}/g)?.join('\n') || content;
+                    formattedKey = `-----BEGIN PRIVATE KEY-----\n${wrappedContent}\n-----END PRIVATE KEY-----`;
+                }
+            }
+        } else {
+            // Multi-line key - validate and clean
+            const beginIndex = lines.findIndex(line => line.includes('-----BEGIN'));
+            const endIndex = lines.findIndex(line => line.includes('-----END'));
+
+            if (beginIndex !== -1 && endIndex !== -1 && endIndex > beginIndex) {
+                // Extract the key content between BEGIN and END markers
+                const keyLines = lines.slice(beginIndex, endIndex + 1);
+                
+                // Clean up each line - remove extra whitespace but preserve content
+                const cleanedLines = keyLines.map(line => {
+                    if (line.includes('-----BEGIN') || line.includes('-----END')) {
+                        return line.trim();
+                    } else {
+                        // For content lines, preserve the base64 content but trim whitespace
+                        return line.trim();
+                    }
+                });
+                
+                // Reconstruct the key with proper formatting
+                formattedKey = cleanedLines.join('\n');
+                
+                // Ensure there's a newline at the end
+                if (!formattedKey.endsWith('\n')) {
+                    formattedKey += '\n';
+                }
+            }
         }
+        
+        return formattedKey;
     }
 
     // If key doesn't have proper format, try to add it

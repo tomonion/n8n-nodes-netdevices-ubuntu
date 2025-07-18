@@ -199,14 +199,35 @@ export class JumpHostConnection extends BaseConnection {
                     } else if (normalizedKey.includes('-----BEGIN RSA PRIVATE KEY-----')) {
                         // RSA keys need proper line wrapping
                         Logger.debug('Detected RSA format key, ensuring proper line wrapping');
-                        const lines = normalizedKey.split('\n');
-                        const header = lines[0];
-                        const footer = lines[lines.length - 1];
-                        const content = lines.slice(1, -1).join('').replace(/\s/g, '');
                         
-                        // Re-wrap content in 64-character lines
-                        const wrappedContent = content.match(/.{1,64}/g)?.join('\n') || content;
-                        normalizedKey = `${header}\n${wrappedContent}\n${footer}`;
+                        // Check if this is a single-line key that needs to be properly formatted
+                        const lines = normalizedKey.split('\n');
+                        if (lines.length === 1) {
+                            // Single line key - need to extract and reformat
+                            const keyContent = normalizedKey;
+                            const beginMatch = keyContent.match(/-----BEGIN RSA PRIVATE KEY-----(.*)-----END RSA PRIVATE KEY-----/);
+                            if (beginMatch) {
+                                const content = beginMatch[1].trim().replace(/\s/g, '');
+                                // Re-wrap content in 64-character lines
+                                const wrappedContent = content.match(/.{1,64}/g)?.join('\n') || content;
+                                normalizedKey = `-----BEGIN RSA PRIVATE KEY-----\n${wrappedContent}\n-----END RSA PRIVATE KEY-----`;
+                                
+                                Logger.debug('Reformatted single-line RSA key', {
+                                    originalLength: keyContent.length,
+                                    newLength: normalizedKey.length,
+                                    contentLines: wrappedContent.split('\n').length
+                                });
+                            }
+                        } else {
+                            // Multi-line key - check if it needs rewrapping
+                            const header = lines[0];
+                            const footer = lines[lines.length - 1];
+                            const content = lines.slice(1, -1).join('').replace(/\s/g, '');
+                            
+                            // Re-wrap content in 64-character lines
+                            const wrappedContent = content.match(/.{1,64}/g)?.join('\n') || content;
+                            normalizedKey = `${header}\n${wrappedContent}\n${footer}`;
+                        }
                     }
                     
                     connectConfig.privateKey = normalizedKey;
