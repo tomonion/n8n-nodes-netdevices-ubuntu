@@ -17,6 +17,90 @@ try {
     };
 }
 
+/**
+ * Utility function to format SSH private key properly
+ * @param privateKey The raw private key content
+ * @returns Properly formatted private key
+ */
+export function formatSSHPrivateKey(privateKey: string): string {
+    if (!privateKey) {
+        throw new Error('Private key is required');
+    }
+
+    // Trim whitespace
+    let formattedKey = privateKey.trim();
+
+    // Normalize line endings
+    formattedKey = formattedKey.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    // Remove any extra whitespace at the beginning and end
+    formattedKey = formattedKey.trim();
+
+    // Check if key already has proper format
+    if (formattedKey.includes('-----BEGIN') && formattedKey.includes('-----END')) {
+        // Key appears to be in PEM format, validate it
+        const lines = formattedKey.split('\n');
+        const beginIndex = lines.findIndex(line => line.includes('-----BEGIN'));
+        const endIndex = lines.findIndex(line => line.includes('-----END'));
+
+        if (beginIndex !== -1 && endIndex !== -1 && endIndex > beginIndex) {
+            // Key is properly formatted, return as is
+            return formattedKey;
+        }
+    }
+
+    // If key doesn't have proper format, try to add it
+    // This handles cases where users might paste just the key content
+    if (!formattedKey.includes('-----BEGIN')) {
+        // Try to detect key type and add appropriate headers
+        if (formattedKey.length > 1000) {
+            // Likely an RSA key
+            formattedKey = '-----BEGIN RSA PRIVATE KEY-----\n' + formattedKey + '\n-----END RSA PRIVATE KEY-----';
+        } else {
+            // Likely an OpenSSH format key
+            formattedKey = '-----BEGIN OPENSSH PRIVATE KEY-----\n' + formattedKey + '\n-----END OPENSSH PRIVATE KEY-----';
+        }
+    }
+
+    return formattedKey;
+}
+
+/**
+ * Utility function to validate SSH private key format
+ * @param privateKey The private key to validate
+ * @returns true if valid, throws error if invalid
+ */
+export function validateSSHPrivateKey(privateKey: string): boolean {
+    if (!privateKey) {
+        throw new Error('Private key is required');
+    }
+
+    const trimmedKey = privateKey.trim();
+    
+    // Check for BEGIN marker
+    if (!trimmedKey.includes('-----BEGIN')) {
+        throw new Error('Private key must start with -----BEGIN marker');
+    }
+
+    // Check for END marker (various types)
+    const hasRsaEnd = trimmedKey.includes('-----END RSA PRIVATE KEY-----');
+    const hasPrivateKeyEnd = trimmedKey.includes('-----END PRIVATE KEY-----');
+    const hasOpenSshEnd = trimmedKey.includes('-----END OPENSSH PRIVATE KEY-----');
+    const hasEcEnd = trimmedKey.includes('-----END EC PRIVATE KEY-----');
+    const hasDsaEnd = trimmedKey.includes('-----END DSA PRIVATE KEY-----');
+
+    if (!(hasRsaEnd || hasPrivateKeyEnd || hasOpenSshEnd || hasEcEnd || hasDsaEnd)) {
+        throw new Error('Private key must end with proper -----END marker');
+    }
+
+    // Check for reasonable key length (should be at least 1000 characters for most keys)
+    if (trimmedKey.length < 500) {
+        throw new Error('Private key appears to be too short. Please ensure you have copied the complete key including BEGIN and END markers.');
+    }
+
+    return true;
+}
+
 export interface JumpHostConfig {
     host: string;
     port: number;
@@ -183,21 +267,23 @@ export class BaseConnection extends EventEmitter {
                 throw new Error('SSH private key is required for private key authentication');
             }
             
-            // Check if private key looks valid
-            if (!this.credentials.privateKey.includes('-----BEGIN') || 
-                !this.credentials.privateKey.includes('-----END')) {
-                Logger.warn('Private key may not be in correct format', {
+            try {
+                // Validate the private key format
+                validateSSHPrivateKey(this.credentials.privateKey);
+                Logger.debug('Private key validation passed', {
+                    keyLength: this.credentials.privateKey.length,
+                    hasPassphrase: !!this.credentials.passphrase,
+                    passphraseLength: this.credentials.passphrase ? this.credentials.passphrase.length : 0
+                });
+            } catch (keyError) {
+                Logger.error('Private key validation failed during credential validation', {
+                    error: keyError instanceof Error ? keyError.message : String(keyError),
                     keyLength: this.credentials.privateKey.length,
                     hasBeginMarker: this.credentials.privateKey.includes('-----BEGIN'),
                     hasEndMarker: this.credentials.privateKey.includes('-----END')
                 });
+                throw keyError;
             }
-            
-            Logger.debug('Private key validation passed', {
-                keyLength: this.credentials.privateKey.length,
-                hasPassphrase: !!this.credentials.passphrase,
-                passphraseLength: this.credentials.passphrase ? this.credentials.passphrase.length : 0
-            });
         } else {
             if (!this.credentials.password) {
                 throw new Error('Password is required for password authentication');
@@ -237,13 +323,22 @@ export class BaseConnection extends EventEmitter {
             if (!this.credentials.jumpHostPrivateKey) {
                 throw new Error('Jump host SSH private key is required for private key authentication');
             }
-            if (!this.credentials.jumpHostPrivateKey.includes('-----BEGIN') ||
-                !this.credentials.jumpHostPrivateKey.includes('-----END')) {
-                Logger.warn('Jump host private key may not be in correct format', {
+            try {
+                // Validate the jump host private key format
+                validateSSHPrivateKey(this.credentials.jumpHostPrivateKey);
+                Logger.debug('Jump host private key validation passed', {
+                    keyLength: this.credentials.jumpHostPrivateKey.length,
+                    hasPassphrase: !!this.credentials.jumpHostPassphrase,
+                    passphraseLength: this.credentials.jumpHostPassphrase ? this.credentials.jumpHostPassphrase.length : 0
+                });
+            } catch (keyError) {
+                Logger.error('Jump host private key validation failed during credential validation', {
+                    error: keyError instanceof Error ? keyError.message : String(keyError),
                     keyLength: this.credentials.jumpHostPrivateKey.length,
                     hasBeginMarker: this.credentials.jumpHostPrivateKey.includes('-----BEGIN'),
                     hasEndMarker: this.credentials.jumpHostPrivateKey.includes('-----END')
                 });
+                throw keyError;
             }
         } else {
             if (!this.credentials.jumpHostPassword) {
@@ -348,32 +443,30 @@ export class BaseConnection extends EventEmitter {
                     reject(new Error('SSH private key is required for private key authentication'));
                     return;
                 }
-                // Normalize the private key format to ensure compatibility
-                let normalizedKey = this.credentials.privateKey.trim();
                 
-                // Ensure proper line endings
-                normalizedKey = normalizedKey.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-                
-                // Ensure the key has proper PEM format (check for various END markers)
-                const hasRsaEnd = normalizedKey.includes('-----END RSA PRIVATE KEY-----');
-                const hasPrivateKeyEnd = normalizedKey.includes('-----END PRIVATE KEY-----');
-                const hasOpenSshEnd = normalizedKey.includes('-----END OPENSSH PRIVATE KEY-----');
-                const hasEcEnd = normalizedKey.includes('-----END EC PRIVATE KEY-----');
-                
-                if (!normalizedKey.startsWith('-----BEGIN') || 
-                    !(hasRsaEnd || hasPrivateKeyEnd || hasOpenSshEnd || hasEcEnd)) {
-                    Logger.error('Private key does not have proper PEM format', {
-                        startsWithBegin: normalizedKey.startsWith('-----BEGIN'),
-                        hasRsaEnd,
-                        hasPrivateKeyEnd,
-                        hasOpenSshEnd,
-                        hasEcEnd
+                try {
+                    // Validate and format the private key
+                    validateSSHPrivateKey(this.credentials.privateKey);
+                    const normalizedKey = formatSSHPrivateKey(this.credentials.privateKey);
+                    
+                    Logger.debug('Private key validation and formatting successful', {
+                        originalLength: this.credentials.privateKey.length,
+                        formattedLength: normalizedKey.length,
+                        hasBeginMarker: normalizedKey.includes('-----BEGIN'),
+                        hasEndMarker: normalizedKey.includes('-----END')
                     });
-                    reject(new Error('SSH private key must be in proper PEM format'));
+                    
+                    connectConfig.privateKey = normalizedKey;
+                } catch (keyError) {
+                    Logger.error('Private key validation failed', {
+                        error: keyError instanceof Error ? keyError.message : String(keyError),
+                        keyLength: this.credentials.privateKey.length,
+                        hasBeginMarker: this.credentials.privateKey.includes('-----BEGIN'),
+                        hasEndMarker: this.credentials.privateKey.includes('-----END')
+                    });
+                    reject(new Error(`SSH private key validation failed: ${keyError instanceof Error ? keyError.message : String(keyError)}`));
                     return;
                 }
-                
-                connectConfig.privateKey = normalizedKey;
                 
                 // Handle passphrase - only add if it's not empty
                 if (this.credentials.passphrase && this.credentials.passphrase.trim() !== '') {

@@ -1,5 +1,5 @@
 import { Client, ConnectConfig } from 'ssh2';
-import { BaseConnection, DeviceCredentials } from './base-connection';
+import { BaseConnection, DeviceCredentials, formatSSHPrivateKey, validateSSHPrivateKey } from './base-connection';
 
 // Try to import n8n's LoggerProxy for proper logging
 let Logger: any;
@@ -168,78 +168,29 @@ export class JumpHostConnection extends BaseConnection {
                     return;
                 }
                 
-                // Validate private key format
-                if (!this.credentials.jumpHostPrivateKey.includes('-----BEGIN') || 
-                    !this.credentials.jumpHostPrivateKey.includes('-----END')) {
-                    Logger.error('Jump host private key format is invalid', {
+                try {
+                    // Validate and format the jump host private key
+                    validateSSHPrivateKey(this.credentials.jumpHostPrivateKey);
+                    const normalizedKey = formatSSHPrivateKey(this.credentials.jumpHostPrivateKey);
+                    
+                    Logger.debug('Jump host private key validation and formatting successful', {
+                        originalLength: this.credentials.jumpHostPrivateKey.length,
+                        formattedLength: normalizedKey.length,
+                        hasBeginMarker: normalizedKey.includes('-----BEGIN'),
+                        hasEndMarker: normalizedKey.includes('-----END')
+                    });
+                    
+                    connectConfig.privateKey = normalizedKey;
+                } catch (keyError) {
+                    Logger.error('Jump host private key validation failed', {
+                        error: keyError instanceof Error ? keyError.message : String(keyError),
                         keyLength: this.credentials.jumpHostPrivateKey.length,
                         hasBeginMarker: this.credentials.jumpHostPrivateKey.includes('-----BEGIN'),
                         hasEndMarker: this.credentials.jumpHostPrivateKey.includes('-----END')
                     });
-                    reject(new Error('Jump host SSH private key must be in PEM format (include -----BEGIN and -----END markers)'));
+                    reject(new Error(`Jump host SSH private key validation failed: ${keyError instanceof Error ? keyError.message : String(keyError)}`));
                     return;
                 }
-                
-                // Debug: Show key format details (without exposing key content)
-                const keyLines = this.credentials.jumpHostPrivateKey.split('\n');
-                Logger.debug('Jump host private key format details', {
-                    keyLength: this.credentials.jumpHostPrivateKey.length,
-                    lineCount: keyLines.length,
-                    hasBeginMarker: this.credentials.jumpHostPrivateKey.includes('-----BEGIN'),
-                    hasEndMarker: this.credentials.jumpHostPrivateKey.includes('-----END')
-                });
-                
-                // Additional debugging for key format issues
-                const trimmedKey = this.credentials.jumpHostPrivateKey.trim();
-                
-                // Check for different END markers that might be present
-                const debugHasRsaEnd = trimmedKey.includes('-----END RSA PRIVATE KEY-----');
-                const debugHasPrivateKeyEnd = trimmedKey.includes('-----END PRIVATE KEY-----');
-                const debugHasOpenSshEnd = trimmedKey.includes('-----END OPENSSH PRIVATE KEY-----');
-                const debugHasEcEnd = trimmedKey.includes('-----END EC PRIVATE KEY-----');
-                
-                const hasProperFormat = trimmedKey.startsWith('-----BEGIN') && 
-                    (debugHasRsaEnd || debugHasPrivateKeyEnd || debugHasOpenSshEnd || debugHasEcEnd);
-                
-                Logger.debug('Jump host private key validation', {
-                    trimmedLength: trimmedKey.length,
-                    hasProperFormat,
-                    startsWithBegin: trimmedKey.startsWith('-----BEGIN'),
-                    hasRsaEnd: debugHasRsaEnd,
-                    hasPrivateKeyEnd: debugHasPrivateKeyEnd,
-                    hasOpenSshEnd: debugHasOpenSshEnd,
-                    hasEcEnd: debugHasEcEnd,
-                    containsNewlines: trimmedKey.includes('\n'),
-                    containsCarriageReturns: trimmedKey.includes('\r'),
-                    last50Chars: trimmedKey.substring(trimmedKey.length - 50)
-                });
-                
-                // Normalize the private key format to ensure compatibility
-                let normalizedKey = this.credentials.jumpHostPrivateKey.trim();
-                
-                // Ensure proper line endings
-                normalizedKey = normalizedKey.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-                
-                // Ensure the key has proper PEM format (check for various END markers)
-                const hasRsaEnd = normalizedKey.includes('-----END RSA PRIVATE KEY-----');
-                const hasPrivateKeyEnd = normalizedKey.includes('-----END PRIVATE KEY-----');
-                const hasOpenSshEnd = normalizedKey.includes('-----END OPENSSH PRIVATE KEY-----');
-                const hasEcEnd = normalizedKey.includes('-----END EC PRIVATE KEY-----');
-                
-                if (!normalizedKey.startsWith('-----BEGIN') || 
-                    !(hasRsaEnd || hasPrivateKeyEnd || hasOpenSshEnd || hasEcEnd)) {
-                    Logger.error('Jump host private key does not have proper PEM format', {
-                        startsWithBegin: normalizedKey.startsWith('-----BEGIN'),
-                        hasRsaEnd,
-                        hasPrivateKeyEnd,
-                        hasOpenSshEnd,
-                        hasEcEnd
-                    });
-                    reject(new Error('Jump host SSH private key must be in proper PEM format'));
-                    return;
-                }
-                
-                connectConfig.privateKey = normalizedKey;
                 
                 // Handle passphrase - only add if it's not empty
                 if (this.credentials.jumpHostPassphrase && this.credentials.jumpHostPassphrase.trim() !== '') {
