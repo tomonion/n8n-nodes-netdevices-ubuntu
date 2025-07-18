@@ -282,68 +282,68 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
             reuseConnection
         });
         
-        try {
+        // Configure device credentials with optimization options
+        const deviceCredentials: any = {
+            host: credentials.host as string,
+            port: credentials.port as number,
+            username: credentials.username as string,
+            authMethod: credentials.authMethod as 'password' | 'privateKey',
+            deviceType: credentials.deviceType as string,
+            timeout: connectionTimeout / 1000,
+            keepAlive: true,
+            fastMode: fastMode,
+            commandTimeout: commandTimeout,
+            connectionPooling: connectionPooling,
+            reuseConnection: reuseConnection,
+        };
 
-            // Configure device credentials with optimization options
-            const deviceCredentials: any = {
-                host: credentials.host as string,
-                port: credentials.port as number,
-                username: credentials.username as string,
-                authMethod: credentials.authMethod as 'password' | 'privateKey',
-                deviceType: credentials.deviceType as string,
-                timeout: connectionTimeout / 1000,
-                keepAlive: true,
-                fastMode: fastMode,
-                commandTimeout: commandTimeout,
-                connectionPooling: connectionPooling,
-                reuseConnection: reuseConnection,
-            };
-
-            // Add authentication-specific fields based on method
-            if (deviceCredentials.authMethod === 'privateKey') {
-                deviceCredentials.privateKey = credentials.privateKey as string;
-                // Only set passphrase if it's not empty or undefined
-                if (credentials.passphrase && String(credentials.passphrase).trim() !== '') {
-                    deviceCredentials.passphrase = credentials.passphrase as string;
-                }
-                // Don't set password for key auth
-            } else {
-                deviceCredentials.password = credentials.password as string;
-                // Don't set privateKey or passphrase for password auth
+        // Add authentication-specific fields based on method
+        if (deviceCredentials.authMethod === 'privateKey') {
+            deviceCredentials.privateKey = credentials.privateKey as string;
+            // Only set passphrase if it's not empty or undefined
+            if (credentials.passphrase && String(credentials.passphrase).trim() !== '') {
+                deviceCredentials.passphrase = credentials.passphrase as string;
             }
+            // Don't set password for key auth
+        } else {
+            deviceCredentials.password = credentials.password as string;
+            // Don't set privateKey or passphrase for password auth
+        }
 
-            // Add enable password for Cisco devices
-            if (credentials.enablePassword) {
-                (deviceCredentials as any).enablePassword = credentials.enablePassword;
-            }
+        // Add enable password for Cisco devices
+        if (credentials.enablePassword) {
+            (deviceCredentials as any).enablePassword = credentials.enablePassword;
+        }
 
-            // Add jump host fields if useJumpHost is enabled
-            if (credentials.useJumpHost) {
-                deviceCredentials.useJumpHost = true;
-                deviceCredentials.jumpHostHost = credentials.jumpHostHost;
-                deviceCredentials.jumpHostPort = credentials.jumpHostPort;
-                deviceCredentials.jumpHostUsername = credentials.jumpHostUsername;
-                deviceCredentials.jumpHostAuthMethod = credentials.jumpHostAuthMethod;
-                deviceCredentials.jumpHostPassword = credentials.jumpHostPassword;
-                deviceCredentials.jumpHostPrivateKey = credentials.jumpHostPrivateKey;
-                deviceCredentials.jumpHostPassphrase = credentials.jumpHostPassphrase;
-            }
+        // Add jump host fields if useJumpHost is enabled
+        if (credentials.useJumpHost) {
+            deviceCredentials.useJumpHost = true;
+            deviceCredentials.jumpHostHost = credentials.jumpHostHost;
+            deviceCredentials.jumpHostPort = credentials.jumpHostPort;
+            deviceCredentials.jumpHostUsername = credentials.jumpHostUsername;
+            deviceCredentials.jumpHostAuthMethod = credentials.jumpHostAuthMethod;
+            deviceCredentials.jumpHostPassword = credentials.jumpHostPassword;
+            deviceCredentials.jumpHostPrivateKey = credentials.jumpHostPrivateKey;
+            deviceCredentials.jumpHostPassphrase = credentials.jumpHostPassphrase;
+        }
 
-            Logger.debug('Configured device credentials', {
-                host: deviceCredentials.host,
-                port: deviceCredentials.port,
-                username: deviceCredentials.username,
-                authMethod: deviceCredentials.authMethod,
-                deviceType: deviceCredentials.deviceType,
-                hasPassword: !!deviceCredentials.password,
-                hasPrivateKey: !!deviceCredentials.privateKey,
-                hasPassphrase: !!deviceCredentials.passphrase,
-                passphraseLength: deviceCredentials.passphrase ? deviceCredentials.passphrase.length : 0,
-                timeout: deviceCredentials.timeout,
-                fastMode: deviceCredentials.fastMode,
-                connectionPooling: deviceCredentials.connectionPooling,
-                reuseConnection: deviceCredentials.reuseConnection
-            });
+        Logger.debug('Configured device credentials', {
+            host: deviceCredentials.host,
+            port: deviceCredentials.port,
+            username: deviceCredentials.username,
+            authMethod: deviceCredentials.authMethod,
+            deviceType: deviceCredentials.deviceType,
+            hasPassword: !!deviceCredentials.password,
+            hasPrivateKey: !!deviceCredentials.privateKey,
+            hasPassphrase: !!deviceCredentials.passphrase,
+            passphraseLength: deviceCredentials.passphrase ? deviceCredentials.passphrase.length : 0,
+            timeout: deviceCredentials.timeout,
+            fastMode: deviceCredentials.fastMode,
+            connectionPooling: deviceCredentials.connectionPooling,
+            reuseConnection: deviceCredentials.reuseConnection
+        });
+
+                try {
 
             // Connection with retry logic and timeout
             let connectionError: Error | null = null;
@@ -531,8 +531,9 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
             }
             throw error;
         } finally {
-            // Always ensure proper cleanup
-            if (connection && autoDisconnect) {
+            // Only disconnect if autoDisconnect is enabled and we're not reusing the connection
+            // This prevents premature disconnection when the connection should remain active
+            if (connection && autoDisconnect && !deviceCredentials.reuseConnection) {
                 try {
                     await connection.disconnect();
                 } catch (disconnectError) {
