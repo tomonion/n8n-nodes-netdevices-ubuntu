@@ -24,6 +24,7 @@ export class JumpHostConnection extends BaseConnection {
         super(credentials);
         this.jumpHostClient = new Client();
         this.setupJumpHostEventHandlers();
+        this.setupTargetConnectionEventHandlers();
     }
 
     private setupJumpHostEventHandlers(): void {
@@ -46,6 +47,49 @@ export class JumpHostConnection extends BaseConnection {
                 jumpHost: this.credentials.jumpHostHost
             });
             this.jumpHostConnected = false;
+        });
+    }
+
+    private setupTargetConnectionEventHandlers(): void {
+        // Override the base class event handlers to prevent premature disconnection
+        this.client.removeAllListeners();
+        
+        this.client.on('ready', () => {
+            Logger.debug('Target connection ready through jump host', {
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost
+            });
+            this.isConnected = true;
+            this.lastActivity = Date.now();
+            this.emit('ready');
+        });
+
+        this.client.on('error', (error) => {
+            Logger.error('Target connection error through jump host', {
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost,
+                error: error.message
+            });
+            this.isConnected = false;
+            this.emit('error', error);
+        });
+
+        this.client.on('end', () => {
+            Logger.debug('Target connection ended through jump host', {
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost
+            });
+            this.isConnected = false;
+            this.emit('end');
+        });
+
+        this.client.on('close', () => {
+            Logger.debug('Target connection closed through jump host', {
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost
+            });
+            this.isConnected = false;
+            this.emit('close');
         });
     }
 
@@ -377,36 +421,105 @@ export class JumpHostConnection extends BaseConnection {
                 connectConfig.password = this.credentials.password;
             }
 
-            // Connect through tunnel
-            this.client.connect(connectConfig);
+            // Set up timeout for the connection
+            const timeoutId = setTimeout(() => {
+                Logger.error('Target connection timeout through tunnel', {
+                    target: this.credentials.host,
+                    timeout: this.timeout
+                });
+                reject(new Error(`Target connection timeout after ${this.timeout}ms`));
+            }, this.timeout);
 
+            // Connect through tunnel
             this.client.once('ready', () => {
+                clearTimeout(timeoutId);
                 Logger.info('Target device connection established through jump host', {
                     target: this.credentials.host,
                     username: this.credentials.username
                 });
+                
+                // Ensure the connection state is properly set
                 this.isConnected = true;
+                this.lastActivity = Date.now();
+                
+                Logger.debug('Connection state after tunnel connection', {
+                    isConnected: this.isConnected,
+                    jumpHostConnected: this.jumpHostConnected,
+                    target: this.credentials.host,
+                    jumpHost: this.credentials.jumpHostHost
+                });
+                
                 resolve();
             });
 
             this.client.once('error', (error) => {
+                clearTimeout(timeoutId);
                 Logger.error('Target device connection through jump host failed', {
                     target: this.credentials.host,
-                    error: error.message
+                    error: error.message,
+                    errorStack: error.stack
                 });
                 reject(error);
             });
+
+            try {
+                this.client.connect(connectConfig);
+            } catch (error) {
+                clearTimeout(timeoutId);
+                Logger.error('Failed to initiate target connection through tunnel', {
+                    error: error instanceof Error ? error.message : String(error),
+                    target: this.credentials.host
+                });
+                reject(error);
+            }
         });
+    }
+
+    // Override the isConnected check to ensure both jump host and target are connected
+    public isConnectedAndReady(): boolean {
+        const connected = this.isConnected && this.jumpHostConnected && this.tunnelStream && !this.tunnelStream.destroyed;
+        
+        Logger.debug('Jump host connection status check', {
+            isConnected: this.isConnected,
+            jumpHostConnected: this.jumpHostConnected,
+            hasTunnel: !!this.tunnelStream,
+            tunnelDestroyed: this.tunnelStream ? this.tunnelStream.destroyed : 'no-tunnel',
+            overallConnected: connected,
+            target: this.credentials.host,
+            jumpHost: this.credentials.jumpHostHost
+        });
+        
+        return connected;
+    }
+
+    // Override sendCommand to check connection state
+    async sendCommand(command: string): Promise<any> {
+        if (!this.isConnectedAndReady()) {
+            throw new Error('Not connected to device');
+        }
+        
+        Logger.debug('Executing command through jump host', {
+            command,
+            target: this.credentials.host,
+            jumpHost: this.credentials.jumpHostHost,
+            connectionStatus: this.isConnectedAndReady()
+        });
+        
+        return await super.sendCommand(command);
     }
 
     async disconnect(): Promise<void> {
         Logger.debug('Disconnecting jump host connection', {
             jumpHost: this.credentials.jumpHostHost,
-            target: this.credentials.host
+            target: this.credentials.host,
+            isConnected: this.isConnected,
+            jumpHostConnected: this.jumpHostConnected
         });
 
-        await super.disconnect();
+        // Don't call super.disconnect() until we clean up our resources
+        // This prevents premature cleanup of the tunnel
         await this.cleanup();
+        await super.disconnect();
     }
 
     private async cleanup(): Promise<void> {
