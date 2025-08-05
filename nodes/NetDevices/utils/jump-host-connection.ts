@@ -477,35 +477,192 @@ export class JumpHostConnection extends BaseConnection {
 
     // Override the isConnected check to ensure both jump host and target are connected
     public isConnectedAndReady(): boolean {
-        const connected = this.isConnected && this.jumpHostConnected && this.tunnelStream && !this.tunnelStream.destroyed;
+        // More flexible connection check - prioritize basic connection state
+        const basicConnected = this.isConnected && this.jumpHostConnected;
+        const tunnelOk = this.tunnelStream && !this.tunnelStream.destroyed;
         
+        // For debugging: log detailed state
         Logger.debug('Jump host connection status check', {
             isConnected: this.isConnected,
             jumpHostConnected: this.jumpHostConnected,
             hasTunnel: !!this.tunnelStream,
             tunnelDestroyed: this.tunnelStream ? this.tunnelStream.destroyed : 'no-tunnel',
-            overallConnected: connected,
+            tunnelReadable: this.tunnelStream ? this.tunnelStream.readable : 'no-tunnel',
+            tunnelWritable: this.tunnelStream ? this.tunnelStream.writable : 'no-tunnel',
+            basicConnected: basicConnected,
+            tunnelOk: tunnelOk,
             target: this.credentials.host,
-            jumpHost: this.credentials.jumpHostHost
+            jumpHost: this.credentials.jumpHostHost,
+            deviceType: this.credentials.deviceType
         });
         
-        return connected;
+        // If basic connections are good but tunnel seems destroyed, 
+        // it might still work for exec() commands
+        return basicConnected && (tunnelOk || this.isLinuxDevice());
     }
 
-    // Override sendCommand to check connection state
+    // Check if this is a Linux device
+    private isLinuxDevice(): boolean {
+        return this.credentials.deviceType.toLowerCase() === 'linux';
+    }
+
+    // Override sendCommand to use appropriate method for device type
     async sendCommand(command: string): Promise<any> {
-        if (!this.isConnectedAndReady()) {
-            throw new Error('Not connected to device');
+        // Use a more flexible connection check
+        if (!this.isConnected || !this.jumpHostConnected) {
+            const error = `Not connected to device. Connected states: target=${this.isConnected}, jumpHost=${this.jumpHostConnected}`;
+            Logger.error('Jump host sendCommand failed - connection check', {
+                isConnected: this.isConnected,
+                jumpHostConnected: this.jumpHostConnected,
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost,
+                deviceType: this.credentials.deviceType
+            });
+            throw new Error(error);
         }
         
         Logger.debug('Executing command through jump host', {
             command,
             target: this.credentials.host,
             jumpHost: this.credentials.jumpHostHost,
+            deviceType: this.credentials.deviceType,
+            isLinux: this.isLinuxDevice(),
             connectionStatus: this.isConnectedAndReady()
         });
         
+        // For Linux devices, use exec() method instead of shell interaction
+        if (this.isLinuxDevice()) {
+            return await this.sendLinuxCommand(command);
+        }
+        
+        // For other devices, use the standard shell-based approach
         return await super.sendCommand(command);
+    }
+
+    // Linux-specific command execution through jump host
+    private async sendLinuxCommand(command: string): Promise<any> {
+        return new Promise((resolve, reject) => {
+            if (!this.client) {
+                const err = new Error('SSH client not available for command execution');
+                Logger.error('sendLinuxCommand: ' + err.message, {
+                    target: this.credentials.host,
+                    jumpHost: this.credentials.jumpHostHost
+                });
+                return reject(err);
+            }
+
+            Logger.debug('Executing Linux command via client.exec() through jump host', { 
+                command,
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost
+            });
+
+            let output = '';
+            let errorOutput = '';
+            let streamClosed = false;
+            let timeoutId: NodeJS.Timeout;
+
+            const cleanup = () => {
+                if (timeoutId) clearTimeout(timeoutId);
+            };
+
+            this.client.exec(command, (err, stream) => {
+                if (err) {
+                    Logger.error('sendLinuxCommand: Failed to execute command through jump host', { 
+                        command, 
+                        error: err.message,
+                        target: this.credentials.host,
+                        jumpHost: this.credentials.jumpHostHost
+                    });
+                    cleanup();
+                    return reject(err);
+                }
+
+                timeoutId = setTimeout(() => {
+                    const msg = `sendLinuxCommand: Command timeout after ${this.commandTimeout}ms`;
+                    Logger.error(msg, { 
+                        command,
+                        target: this.credentials.host,
+                        jumpHost: this.credentials.jumpHostHost
+                    });
+                    cleanup();
+                    stream.close();
+                    reject(new Error(msg));
+                }, this.commandTimeout);
+
+                stream.on('data', (data: Buffer) => {
+                    const chunk = data.toString('utf8');
+                    output += chunk;
+                    Logger.debug('sendLinuxCommand: stdout data received through jump host', { 
+                        command, 
+                        length: chunk.length,
+                        target: this.credentials.host
+                    });
+                });
+
+                stream.stderr.on('data', (data: Buffer) => {
+                    const chunk = data.toString('utf8');
+                    errorOutput += chunk;
+                    Logger.warn('sendLinuxCommand: stderr data received through jump host', { 
+                        command, 
+                        length: chunk.length,
+                        target: this.credentials.host
+                    });
+                });
+
+                stream.on('close', (code: number, signal: string) => {
+                    if (streamClosed) return;
+                    streamClosed = true;
+
+                    Logger.debug('sendLinuxCommand: stream closed through jump host', { 
+                        command, 
+                        code, 
+                        signal,
+                        target: this.credentials.host,
+                        jumpHost: this.credentials.jumpHostHost
+                    });
+                    cleanup();
+
+                    // Update activity timestamp
+                    this.lastActivity = Date.now();
+
+                    if (errorOutput && !output) {
+                        // If there's only stderr, treat it as an error
+                        resolve({
+                            command,
+                            output: this.stripAnsi(errorOutput).trim(),
+                            success: false,
+                            error: `Command failed with exit code ${code || 'N/A'}`
+                        });
+                    } else {
+                        // Otherwise, return stdout (and stderr if present)
+                        const fullOutput = errorOutput ? `${output}\n--- STDERR ---\n${errorOutput}` : output;
+                        resolve({
+                            command,
+                            output: this.stripAnsi(fullOutput).trim(),
+                            success: code === 0,
+                            error: code !== 0 ? `Command failed with exit code ${code || 'N/A'}` : undefined
+                        });
+                    }
+                });
+
+                stream.on('error', (streamErr: Error) => {
+                    Logger.error('sendLinuxCommand: stream error through jump host', { 
+                        command, 
+                        error: streamErr.message,
+                        target: this.credentials.host,
+                        jumpHost: this.credentials.jumpHostHost
+                    });
+                    cleanup();
+                    reject(streamErr);
+                });
+            });
+        });
+    }
+
+    // Helper method to strip ANSI escape codes (copied from LinuxConnection)
+    private stripAnsi(str: string): string {
+        return str.replace(/[\u001b\u009b][[()#;?]*.{0,2}(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
     }
 
     async disconnect(): Promise<void> {
