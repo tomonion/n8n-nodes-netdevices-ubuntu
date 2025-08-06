@@ -5,7 +5,7 @@ import { LinuxConnection } from './linux';
 import { PaloAltoConnection } from './paloalto';
 import { CienaSaosConnection } from './ciena';
 import { FortinetConnection } from './fortinet';
-import { JumpHostConnection } from './jump-host-connection';
+import { DeviceSpecificJumpHostConnection } from './device-specific-jump-host-connection';
 
 export type SupportedDeviceType = 
     | 'cisco_ios'
@@ -50,22 +50,23 @@ export class ConnectionDispatcher {
      * @returns Connection instance
      */
     static createConnection(credentials: DeviceCredentials): BaseConnection {
-        // Check if jump host is required
-        if (credentials.useJumpHost && credentials.jumpHostHost && credentials.jumpHostPort && credentials.jumpHostUsername && credentials.jumpHostAuthMethod) {
-            return new JumpHostConnection(credentials);
-        }
-        
-        // Existing logic for direct connections
         const deviceType = credentials.deviceType.toLowerCase();
-        
-        // Check if the device type is supported
         const ConnectionClass = CONNECTION_CLASS_MAPPING[deviceType];
-        
+
         if (!ConnectionClass) {
             throw new Error(`Unsupported device type: ${deviceType}. Supported types: ${Object.keys(CONNECTION_CLASS_MAPPING).join(', ')}`);
         }
+
+        // Create the device-specific connection instance first
+        const deviceConnection = new ConnectionClass(credentials);
+
+        // If jump host is required, wrap the device connection in a jump host connection
+        if (credentials.useJumpHost && credentials.jumpHostHost && credentials.jumpHostPort && credentials.jumpHostUsername && credentials.jumpHostAuthMethod) {
+            return new DeviceSpecificJumpHostConnection(credentials, deviceConnection);
+        }
         
-        return new ConnectionClass(credentials);
+        // Otherwise, return the direct device connection
+        return deviceConnection;
     }
 
     /**

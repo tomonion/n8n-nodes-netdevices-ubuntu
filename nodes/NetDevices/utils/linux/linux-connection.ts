@@ -23,7 +23,7 @@ export class LinuxConnection extends BaseConnection {
         super(credentials);
     }
 
-    protected async sessionPreparation(): Promise<void> {
+    public async sessionPreparation(): Promise<void> {
         Logger.debug('Starting Linux session preparation', {
             host: this.credentials.host,
             fastMode: this.fastMode

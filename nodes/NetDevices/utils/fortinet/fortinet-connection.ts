@@ -12,7 +12,7 @@ export class FortinetConnection extends BaseConnection {
         super(credentials);
     }
 
-    protected async sessionPreparation(): Promise<void> {
+    public async sessionPreparation(): Promise<void> {
         await this.createFortinetShellChannel();
         await this.handleBanner();
         await this.setBasePrompt();

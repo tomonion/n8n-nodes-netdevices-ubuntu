@@ -9,7 +9,7 @@ export class JuniperConnection extends BaseConnection {
         super(credentials);
     }
 
-    protected async sessionPreparation(): Promise<void> {
+    public async sessionPreparation(): Promise<void> {
         // Create shell channel
         await this.createJuniperShellChannel();
         

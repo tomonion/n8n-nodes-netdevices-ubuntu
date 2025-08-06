@@ -6,7 +6,7 @@ export class CienaSaosConnection extends BaseConnection {
         super(credentials);
     }
 
-    protected async sessionPreparation(): Promise<void> {
+    public async sessionPreparation(): Promise<void> {
         await this.createCienaShellChannel();
         await this.setBasePrompt();
         await this.disablePaging();

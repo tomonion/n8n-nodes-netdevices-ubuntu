@@ -199,10 +199,10 @@ export interface CommandResult {
 }
 
 export class BaseConnection extends EventEmitter {
-    protected client: Client;
-    protected credentials: DeviceCredentials;
-    protected isConnected: boolean = false;
-    protected currentChannel: any;
+    public client: Client;
+    public credentials: DeviceCredentials;
+    public isConnected: boolean = false;
+    public currentChannel: any;
     protected basePrompt: string = '';
     protected enabledPrompt: string = '';
     protected configPrompt: string = '';
@@ -697,7 +697,7 @@ export class BaseConnection extends EventEmitter {
         });
     }
 
-    protected async sessionPreparation(): Promise<void> {
+    public async sessionPreparation(): Promise<void> {
         // Create shell channel
         await this.createShellChannel();
         

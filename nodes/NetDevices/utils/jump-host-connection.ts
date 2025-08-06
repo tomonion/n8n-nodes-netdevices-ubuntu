@@ -544,11 +544,6 @@ export class JumpHostConnection extends BaseConnection {
             return await this.sendLinuxCommand(command);
         }
         
-        // For Cisco NX-OS devices, use enhanced shell-based approach with longer timeout
-        if (this.credentials.deviceType === 'cisco_nxos') {
-            return await this.sendNxosCommand(command);
-        }
-        
         // For other devices, use the standard shell-based approach
         return await super.sendCommand(command);
     }
@@ -672,55 +667,6 @@ export class JumpHostConnection extends BaseConnection {
                 });
             });
         });
-    }
-
-    // NX-OS specific command execution through jump host with enhanced timeout handling
-    private async sendNxosCommand(command: string): Promise<any> {
-        try {
-            if (!this.isConnected || !this.currentChannel) {
-                throw new Error('Not connected to device');
-            }
-
-            Logger.debug('Executing NX-OS command through jump host', {
-                command,
-                target: this.credentials.host,
-                jumpHost: this.credentials.jumpHostHost,
-                deviceType: this.credentials.deviceType
-            });
-
-            // Send the command
-            await this.writeChannel(command + this.newline);
-            
-            // Use longer timeout for NX-OS commands through jump host (15 seconds)
-            const timeout = this.fastMode ? 10000 : 15000;
-            
-            // Wait for response with NX-OS-specific timeout
-            const output = await this.readUntilPrompt(undefined, timeout);
-            
-            // Clean up the output
-            const cleanOutput = this.sanitizeOutput(output, command);
-
-            return {
-                command,
-                output: cleanOutput,
-                success: true
-            };
-
-        } catch (error) {
-            Logger.error('NX-OS command execution failed through jump host', {
-                command,
-                target: this.credentials.host,
-                jumpHost: this.credentials.jumpHostHost,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            
-            return {
-                command,
-                output: '',
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error'
-            };
-        }
     }
 
     // Helper method to strip ANSI escape codes (copied from LinuxConnection)

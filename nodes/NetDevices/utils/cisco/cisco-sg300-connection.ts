@@ -10,7 +10,7 @@ export class CiscoSG300Connection extends BaseConnection {
         this.enablePassword = credentials.enablePassword || credentials.password || '';
     }
 
-    protected async sessionPreparation(): Promise<void> {
+    public async sessionPreparation(): Promise<void> {
         // Create shell channel
         await this.createSG300ShellChannel();
         
