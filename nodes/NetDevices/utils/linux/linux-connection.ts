@@ -311,7 +311,7 @@ export class LinuxConnection extends BaseConnection {
         });
     }
 
-    private escapeRegex(str: string): string {
+    protected escapeRegex(str: string): string {
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 

@@ -1050,6 +1050,10 @@ export class BaseConnection extends EventEmitter {
         await this.readUntilPrompt();
     }
 
+    protected escapeRegex(string: string): string {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     protected sanitizeOutput(output: string, command: string): string {
         // Escape special regex characters in the command
         const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
