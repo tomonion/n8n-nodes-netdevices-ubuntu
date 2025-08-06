@@ -18,7 +18,7 @@ try {
 export class JumpHostConnection extends BaseConnection {
     private jumpHostClient: Client;
     private tunnelStream: any;
-    private jumpHostConnected: boolean = false;
+    protected jumpHostConnected: boolean = false;
 
     constructor(credentials: DeviceCredentials) {
         super(credentials);
@@ -479,30 +479,31 @@ export class JumpHostConnection extends BaseConnection {
     public isConnectedAndReady(): boolean {
         // More flexible connection check - prioritize basic connection state
         const basicConnected = this.isConnected && this.jumpHostConnected;
-        const tunnelOk = this.tunnelStream && !this.tunnelStream.destroyed && 
-                         this.tunnelStream.readable && this.tunnelStream.writable;
+        const tunnelExists = !!this.tunnelStream;
+        const tunnelDestroyed = this.tunnelStream ? this.tunnelStream.destroyed : false;
         
         // For debugging: log detailed state
         Logger.debug('Jump host connection status check', {
             isConnected: this.isConnected,
             jumpHostConnected: this.jumpHostConnected,
-            hasTunnel: !!this.tunnelStream,
-            tunnelDestroyed: this.tunnelStream ? this.tunnelStream.destroyed : 'no-tunnel',
+            hasTunnel: tunnelExists,
+            tunnelDestroyed: tunnelDestroyed,
             tunnelReadable: this.tunnelStream ? this.tunnelStream.readable : 'no-tunnel',
             tunnelWritable: this.tunnelStream ? this.tunnelStream.writable : 'no-tunnel',
             basicConnected: basicConnected,
-            tunnelOk: tunnelOk,
             target: this.credentials.host,
             jumpHost: this.credentials.jumpHostHost,
             deviceType: this.credentials.deviceType
         });
         
         // For Linux devices, basic connection is sufficient (uses exec)
-        // For network devices like NX-OS, we need both basic connection and active tunnel
+        // For network devices like NX-OS, we need basic connection and tunnel should exist and not be destroyed
         if (this.isLinuxDevice()) {
             return basicConnected;
         } else {
-            return basicConnected && tunnelOk;
+            // For network devices, we need basic connection and a tunnel that exists and isn't explicitly destroyed
+            // Note: tunnel readable/writable state can be unreliable after some time, so we don't check those
+            return basicConnected && tunnelExists && !tunnelDestroyed;
         }
     }
 
@@ -513,21 +514,35 @@ export class JumpHostConnection extends BaseConnection {
 
     // Override sendCommand to use appropriate method for device type
     async sendCommand(command: string): Promise<any> {
-        // Enhanced connection check - verify tunnel is still active
-        const tunnelIsActive = this.tunnelStream && !this.tunnelStream.destroyed && 
-                              this.tunnelStream.readable && this.tunnelStream.writable;
+        // More flexible connection check - prioritize basic SSH connection states
+        const basicConnected = this.isConnected && this.jumpHostConnected;
+        const tunnelExists = !!this.tunnelStream;
+        const tunnelDestroyed = this.tunnelStream ? this.tunnelStream.destroyed : false;
         
-        if (!this.isConnected || !this.jumpHostConnected || !tunnelIsActive) {
-            const error = `Not connected to device. Connected states: target=${this.isConnected}, jumpHost=${this.jumpHostConnected}, tunnelActive=${tunnelIsActive}`;
+        // For command execution, we primarily need the basic SSH connections to be active
+        // The tunnel state can be more flexible since SSH2 manages the stream internally
+        if (!basicConnected) {
+            const error = `Not connected to device. Connected states: target=${this.isConnected}, jumpHost=${this.jumpHostConnected}`;
             Logger.error('Jump host sendCommand failed - connection check', {
                 isConnected: this.isConnected,
                 jumpHostConnected: this.jumpHostConnected,
-                tunnelActive: tunnelIsActive,
+                tunnelExists: tunnelExists,
+                tunnelDestroyed: tunnelDestroyed,
                 target: this.credentials.host,
                 jumpHost: this.credentials.jumpHostHost,
                 deviceType: this.credentials.deviceType
             });
             throw new Error(error);
+        }
+        
+        // Additional check: if tunnel is explicitly destroyed, we should reconnect
+        if (tunnelExists && tunnelDestroyed) {
+            Logger.warn('Tunnel stream was destroyed, attempting to re-establish connection', {
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost,
+                deviceType: this.credentials.deviceType
+            });
+            throw new Error('Tunnel connection was lost, please retry');
         }
         
         Logger.debug('Executing command through jump host', {
@@ -536,7 +551,10 @@ export class JumpHostConnection extends BaseConnection {
             jumpHost: this.credentials.jumpHostHost,
             deviceType: this.credentials.deviceType,
             isLinux: this.isLinuxDevice(),
-            connectionStatus: this.isConnectedAndReady()
+            connectionStatus: this.isConnectedAndReady(),
+            basicConnected: basicConnected,
+            tunnelExists: tunnelExists,
+            tunnelDestroyed: tunnelDestroyed
         });
         
         // For Linux devices, use exec() method instead of shell interaction
@@ -545,7 +563,27 @@ export class JumpHostConnection extends BaseConnection {
         }
         
         // For other devices, use the standard shell-based approach
-        return await super.sendCommand(command);
+        try {
+            return await super.sendCommand(command);
+        } catch (commandError) {
+            // Add context about jump host setup to command errors
+            Logger.error('Command execution failed through jump host', {
+                command,
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost,
+                deviceType: this.credentials.deviceType,
+                error: commandError instanceof Error ? commandError.message : String(commandError),
+                connectionState: {
+                    isConnected: this.isConnected,
+                    jumpHostConnected: this.jumpHostConnected,
+                    tunnelExists: tunnelExists,
+                    tunnelDestroyed: tunnelDestroyed
+                }
+            });
+            
+            // Re-throw with enhanced context
+            throw new Error(`Jump host command failed: ${commandError instanceof Error ? commandError.message : String(commandError)}`);
+        }
     }
 
     // Linux-specific command execution through jump host

@@ -38,27 +38,58 @@ export class DeviceSpecificJumpHostConnection extends JumpHostConnection {
 	public async sessionPreparation(): Promise<void> {
 		Logger.debug('Delegating session preparation to device-specific connection', {
 			deviceType: this.credentials.deviceType,
+			hasClient: !!this.client,
+			isConnected: this.isConnected,
+			jumpHostConnected: this.jumpHostConnected
 		});
+
+		// Ensure we have an active SSH connection before session preparation
+		if (!this.client || !this.isConnected) {
+			Logger.error('SSH client not ready for session preparation', {
+				hasClient: !!this.client,
+				isConnected: this.isConnected,
+				jumpHostConnected: this.jumpHostConnected,
+				deviceType: this.credentials.deviceType
+			});
+			throw new Error('SSH connection not established before session preparation');
+		}
 
 		// Synchronize the client and channel before preparation
 		this.deviceConnection.client = this.client;
 		this.deviceConnection.currentChannel = this.currentChannel;
+		
+		// Ensure device connection shares the same connection state
+		this.deviceConnection.isConnected = this.isConnected;
 
-		// Delegate the call to the actual device-specific implementation
-		await this.deviceConnection.sessionPreparation();
+		try {
+			// Delegate the call to the actual device-specific implementation
+			await this.deviceConnection.sessionPreparation();
 
-		// Re-synchronize after preparation to capture the created channel
-		this.currentChannel = this.deviceConnection.currentChannel;
+			// Re-synchronize after preparation to capture the created channel
+			this.currentChannel = this.deviceConnection.currentChannel;
 
-		if (!this.currentChannel) {
-			Logger.error('Session preparation failed to create a channel', {
-				deviceType: this.credentials.deviceType,
+			if (!this.currentChannel) {
+				Logger.error('Session preparation failed to create a channel', {
+					deviceType: this.credentials.deviceType,
+					hasClient: !!this.client,
+					isConnected: this.isConnected
+				});
+				throw new Error('Failed to create a valid shell channel during session preparation.');
+			}
+
+			Logger.debug('Session preparation delegated successfully', {
+				hasChannel: !!this.currentChannel,
+				channelType: this.currentChannel.constructor.name,
+				deviceType: this.credentials.deviceType
 			});
-			throw new Error('Failed to create a valid shell channel during session preparation.');
+		} catch (sessionError) {
+			Logger.error('Device-specific session preparation failed', {
+				deviceType: this.credentials.deviceType,
+				error: sessionError instanceof Error ? sessionError.message : String(sessionError),
+				hasClient: !!this.client,
+				isConnected: this.isConnected
+			});
+			throw sessionError;
 		}
-
-		Logger.debug('Session preparation delegated successfully', {
-			hasChannel: !!this.currentChannel,
-		});
 	}
 }
