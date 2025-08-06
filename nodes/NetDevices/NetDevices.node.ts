@@ -444,13 +444,11 @@ async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
                     result = await Promise.race([commandPromise, timeoutPromise]);
                     
                     // Check if command was successful
-                                         if (!result.success) {
-                         throw new NodeOperationError(
-                             this.getNode(),
-                             result.error || 'Command execution failed',
-                             { itemIndex: i },
-                         );
-                     }
+                    if (!result.success) {
+                        // If the command failed, but we have the result, break the loop and proceed
+                        commandError = new Error(result.error || 'Command execution failed without a specific error');
+                        break;
+                    }
                     
                     commandError = null;
                     break;
