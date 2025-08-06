@@ -825,104 +825,42 @@ export class BaseConnection extends EventEmitter {
         return new Promise((resolve, reject) => {
             let buffer = '';
             let timeoutId: NodeJS.Timeout;
-            const prompt = expectedPrompt || this.basePrompt;
-            
-            // Use shorter timeout in fast mode
+            let debounceId: NodeJS.Timeout | null = null;
             const actualTimeout = this.fastMode ? Math.min(timeout, 5000) : timeout;
-            
-            // Smart prompt patterns for faster detection
+
+            // List of universal prompt endings
             const promptPatterns = [
-                prompt,
-                prompt + '#',
-                prompt + '>',
-                prompt + '$',
-                prompt + '%'
+                /^\S+[>#$]\s*$/, // Common prompt format (e.g., router>, router#)
+                /^\S+\(config\)#\s*$/, // Cisco config mode
+                /^\S+\(config-if\)#\s*$/, // Cisco interface config mode
+                /^\[\S+@\S+\s+\S+\][#$]\s*$/, // Linux prompt (e.g., [user@host ~]$)
             ];
 
-            // Add Linux-specific prompt patterns
-            const linuxPromptPatterns = [
-                /\$\s*$/,           // $ at end of line
-                /#\s*$/,           // # at end of line (root)
-                />\s*$/,           // > at end of line
-                /\]\s*\$\s*$/,     // ]$ pattern
-                /\]\s*#\s*$/,      // ]# pattern
-                /~\s*\$\s*$/,      // ~$ pattern
-                /~\s*#\s*$/,       // ~# pattern
-                /@.*:\s*\$\s*$/,   // user@host:$ pattern
-                /@.*:\s*#\s*$/,    // user@host:# pattern
-                /@.*:\s*~\s*\$\s*$/,  // user@host:~$ pattern
-                /@.*:\s*~\s*#\s*$/,   // user@host:~# pattern
-            ];
-
-            // Add Cisco NX-OS specific prompt patterns
-            const nxosPromptPatterns = [
-                /.*#\s*$/,                    // Any hostname followed by #
-                /.*\(config.*\)#\s*$/,        // Configuration mode prompts
-                /.*\(config\)#\s*$/,          // Basic config mode
-                /.*switch#\s*$/,              // NX-OS switch prompt
-                /.*nexus#\s*$/,               // NX-OS nexus prompt
-                /.*\-nxos.*#\s*$/,            // Devices with "nxos" in hostname
-                /.*mgmt.*#\s*$/,              // Management interface prompts
-                /.*spine.*#\s*$/,             // Spine switch prompts
-                /.*leaf.*#\s*$/,              // Leaf switch prompts
-            ];
+            const cleanup = () => {
+                if (this.currentChannel) {
+                    this.currentChannel.removeListener('data', onData);
+                    this.currentChannel.removeListener('error', onError);
+                }
+                if (timeoutId) clearTimeout(timeoutId);
+                if (debounceId) clearTimeout(debounceId);
+            };
 
             const onData = (data: string) => {
                 buffer += data;
-                
-                // Check for any prompt pattern match
-                const hasPrompt = promptPatterns.some(p => buffer.includes(p));
-                
-                if (hasPrompt) {
-                    cleanup();
-                    resolve(buffer);
-                    return;
-                }
-                
-                // Check for Linux-specific prompt patterns
-                const hasLinuxPrompt = linuxPromptPatterns.some(pattern => pattern.test(buffer));
-                
-                if (hasLinuxPrompt) {
-                    cleanup();
-                    resolve(buffer);
-                    return;
-                }
-                
-                // Check for Cisco NX-OS specific prompt patterns
-                const hasNxosPrompt = nxosPromptPatterns.some(pattern => pattern.test(buffer));
-                
-                if (hasNxosPrompt) {
-                    cleanup();
-                    resolve(buffer);
-                    return;
-                }
-                
-                // Fast mode: also check for common prompt endings
-                if (this.fastMode) {
-                    const lines = buffer.split('\n');
-                    const lastLine = lines[lines.length - 1];
-                    if (lastLine.match(/[>#$%]\s*$/)) {
+                if (debounceId) clearTimeout(debounceId);
+
+                debounceId = setTimeout(() => {
+                    const lines = buffer.trim().split('\n');
+                    const lastLine = lines[lines.length - 1].trim();
+
+                    // Check if the last line matches any known prompt pattern
+                    const isPrompt = promptPatterns.some(pattern => pattern.test(lastLine));
+
+                    if (isPrompt) {
                         cleanup();
                         resolve(buffer);
-                        return;
                     }
-                }
-                
-                // Additional check for command completion - look for repeated patterns
-                const lines = buffer.split('\n');
-                if (lines.length > 1) {
-                    const lastLine = lines[lines.length - 1];
-                    
-                    // If we see the same prompt pattern twice, it's likely a prompt
-                    if (lastLine.length > 0 && 
-                        (lastLine.includes(prompt) || 
-                         linuxPromptPatterns.some(pattern => pattern.test(lastLine)) ||
-                         nxosPromptPatterns.some(pattern => pattern.test(lastLine)))) {
-                        cleanup();
-                        resolve(buffer);
-                        return;
-                    }
-                }
+                }, 150); // Debounce for 150ms
             };
 
             const onError = (error: Error) => {
@@ -930,19 +868,11 @@ export class BaseConnection extends EventEmitter {
                 reject(error);
             };
 
-            const cleanup = () => {
-                if (this.currentChannel) {
-                    this.currentChannel.removeListener('data', onData);
-                    this.currentChannel.removeListener('error', onError);
-                }
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                }
-            };
-
             timeoutId = setTimeout(() => {
                 cleanup();
-                reject(new Error(`Timeout waiting for prompt after ${actualTimeout}ms. Buffer: ${buffer.slice(-200)}`));
+                // If we time out, resolve with the buffer we have.
+                // The calling function can then decide if the output is valid.
+                resolve(buffer);
             }, actualTimeout);
 
             if (this.currentChannel) {
