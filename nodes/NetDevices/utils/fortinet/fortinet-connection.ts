@@ -1,7 +1,6 @@
 import { BaseConnection, DeviceCredentials, CommandResult } from '../base-connection';
 
 export class FortinetConnection extends BaseConnection {
-    private readonly promptPattern = /[#$]/;
     private vdoms: boolean = false;
     private osVersion: string = '';
     private originalOutputMode: string = '';
@@ -304,11 +303,22 @@ export class FortinetConnection extends BaseConnection {
     }
 
     protected sanitizeOutput(output: string, command: string): string {
-        let cleanOutput = output.replace(command, '').trim();
-        cleanOutput = cleanOutput.replace(new RegExp(this.promptPattern.source + '\\s*$', 'g'), '');
-        cleanOutput = cleanOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-        cleanOutput = cleanOutput.replace(/\n\s*\n/g, '\n').trim();
-        return cleanOutput;
+        const lines = output.split('\n');
+        // Remove the command echo, which is usually the first line
+        if (lines.length > 0 && lines[0].includes(command)) {
+            lines.shift();
+        }
+
+        // Remove the prompt, which is the last line
+        if (lines.length > 0) {
+            const lastLine = lines[lines.length - 1];
+            const promptRegex = new RegExp(`^${this.escapeRegex(this.basePrompt)}[>#$]`);
+            if (promptRegex.test(lastLine)) {
+                lines.pop();
+            }
+        }
+
+        return lines.join('\n').trim();
     }
 
     // No traditional config mode for Fortinet

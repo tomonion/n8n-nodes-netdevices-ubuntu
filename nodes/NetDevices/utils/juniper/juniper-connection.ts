@@ -351,32 +351,22 @@ export class JuniperConnection extends BaseConnection {
     }
 
     protected sanitizeOutput(output: string, command: string): string {
-        // Escape special regex characters in the command
-        const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        
-        // Remove the command echo
-        let cleanOutput = output.replace(new RegExp(escapedCommand, 'g'), '');
-        
-        // Remove Juniper-specific prompts
-        const escapedBasePrompt = this.basePrompt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        cleanOutput = cleanOutput.replace(new RegExp(escapedBasePrompt + '[>#$%]', 'g'), '');
-        cleanOutput = cleanOutput.replace(/\[edit\]/g, '');
-        
-        // Remove common Juniper CLI artifacts
-        cleanOutput = cleanOutput.replace(/Entering configuration mode/g, '');
-        cleanOutput = cleanOutput.replace(/Exiting configuration mode/g, '');
-        cleanOutput = cleanOutput.replace(/commit complete/g, '');
-        cleanOutput = cleanOutput.replace(/Screen width set to \d+/g, '');
-        cleanOutput = cleanOutput.replace(/Disabling complete-on-space/g, '');
-        cleanOutput = cleanOutput.replace(/Screen length set to \d+/g, '');
-        
-        // Remove extra whitespace and newlines
-        cleanOutput = cleanOutput.replace(/^\s+|\s+$/g, '');
-        cleanOutput = cleanOutput.replace(/\r\n/g, '\n');
-        cleanOutput = cleanOutput.replace(/\r/g, '\n');
-        cleanOutput = cleanOutput.replace(/\n\s*\n/g, '\n');
-        
-        return cleanOutput;
+        const lines = output.split('\n');
+        // Remove the command echo, which is usually the first line
+        if (lines.length > 0 && lines[0].includes(command)) {
+            lines.shift();
+        }
+
+        // Remove the prompt, which is the last line
+        if (lines.length > 0) {
+            const lastLine = lines[lines.length - 1];
+            const promptRegex = new RegExp(`^${this.escapeRegex(this.basePrompt)}[>#$]`);
+            if (promptRegex.test(lastLine)) {
+                lines.pop();
+            }
+        }
+
+        return lines.join('\n').trim();
     }
 
     // Juniper-specific utility methods

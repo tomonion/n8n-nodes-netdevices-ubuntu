@@ -69,4 +69,23 @@ export class CienaSaosConnection extends BaseConnection {
     protected async enterConfigMode(): Promise<void> { return; }
     protected async exitConfigMode(): Promise<void> { return; }
     isInConfigMode(): boolean { return false; }
+
+    protected sanitizeOutput(output: string, command: string): string {
+        const lines = output.split('\n');
+        // Remove the command echo, which is usually the first line
+        if (lines.length > 0 && lines[0].includes(command)) {
+            lines.shift();
+        }
+
+        // Remove the prompt, which is the last line
+        if (lines.length > 0) {
+            const lastLine = lines[lines.length - 1];
+            const promptRegex = new RegExp(`^${this.escapeRegex(this.basePrompt)}[>#$]`);
+            if (promptRegex.test(lastLine)) {
+                lines.pop();
+            }
+        }
+
+        return lines.join('\n').trim();
+    }
 } 

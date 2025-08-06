@@ -2,7 +2,6 @@ import { BaseConnection, DeviceCredentials, CommandResult } from '../base-connec
 
 export class PaloAltoConnection extends BaseConnection {
     private inConfigMode: boolean = false;
-    private readonly promptPattern = /[>#]/;
 
     constructor(credentials: DeviceCredentials) {
         super(credentials);
@@ -342,38 +341,22 @@ export class PaloAltoConnection extends BaseConnection {
     }
 
     protected sanitizeOutput(output: string, command: string): string {
-        // Remove the command from the output
-        let cleanOutput = output.replace(command, '').trim();
-        
-        // Remove prompt patterns
-        cleanOutput = cleanOutput.replace(new RegExp(this.promptPattern.source + '\\s*$', 'g'), '');
-        
-        // Remove context items like [edit]
-        cleanOutput = this.stripContextItems(cleanOutput);
-        
-        // Remove ANSI escape codes
-        cleanOutput = cleanOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-        
-        // Remove extra whitespace
-        cleanOutput = cleanOutput.replace(/\n\s*\n/g, '\n').trim();
-        
-        return cleanOutput;
-    }
-
-    private stripContextItems(output: string): string {
-        // Strip PaloAlto-specific output like [edit]
-        const stringsToStrip = [/\[edit.*\]/];
-        
         const lines = output.split('\n');
-        const lastLine = lines[lines.length - 1];
-        
-        for (const pattern of stringsToStrip) {
-            if (pattern.test(lastLine)) {
-                return lines.slice(0, -1).join('\n');
+        // Remove the command echo, which is usually the first line
+        if (lines.length > 0 && lines[0].includes(command)) {
+            lines.shift();
+        }
+
+        // Remove the prompt, which is the last line
+        if (lines.length > 0) {
+            const lastLine = lines[lines.length - 1];
+            const promptRegex = new RegExp(`^${this.escapeRegex(this.basePrompt)}[>#$]`);
+            if (promptRegex.test(lastLine)) {
+                lines.pop();
             }
         }
-        
-        return output;
+
+        return lines.join('\n').trim();
     }
 
     isInConfigMode(): boolean {
