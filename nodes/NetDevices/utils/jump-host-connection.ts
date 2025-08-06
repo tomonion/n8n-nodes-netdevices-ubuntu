@@ -479,7 +479,8 @@ export class JumpHostConnection extends BaseConnection {
     public isConnectedAndReady(): boolean {
         // More flexible connection check - prioritize basic connection state
         const basicConnected = this.isConnected && this.jumpHostConnected;
-        const tunnelOk = this.tunnelStream && !this.tunnelStream.destroyed;
+        const tunnelOk = this.tunnelStream && !this.tunnelStream.destroyed && 
+                         this.tunnelStream.readable && this.tunnelStream.writable;
         
         // For debugging: log detailed state
         Logger.debug('Jump host connection status check', {
@@ -496,9 +497,13 @@ export class JumpHostConnection extends BaseConnection {
             deviceType: this.credentials.deviceType
         });
         
-        // If basic connections are good but tunnel seems destroyed, 
-        // it might still work for exec() commands
-        return basicConnected && (tunnelOk || this.isLinuxDevice());
+        // For Linux devices, basic connection is sufficient (uses exec)
+        // For network devices like NX-OS, we need both basic connection and active tunnel
+        if (this.isLinuxDevice()) {
+            return basicConnected;
+        } else {
+            return basicConnected && tunnelOk;
+        }
     }
 
     // Check if this is a Linux device
@@ -508,12 +513,16 @@ export class JumpHostConnection extends BaseConnection {
 
     // Override sendCommand to use appropriate method for device type
     async sendCommand(command: string): Promise<any> {
-        // Use a more flexible connection check
-        if (!this.isConnected || !this.jumpHostConnected) {
-            const error = `Not connected to device. Connected states: target=${this.isConnected}, jumpHost=${this.jumpHostConnected}`;
+        // Enhanced connection check - verify tunnel is still active
+        const tunnelIsActive = this.tunnelStream && !this.tunnelStream.destroyed && 
+                              this.tunnelStream.readable && this.tunnelStream.writable;
+        
+        if (!this.isConnected || !this.jumpHostConnected || !tunnelIsActive) {
+            const error = `Not connected to device. Connected states: target=${this.isConnected}, jumpHost=${this.jumpHostConnected}, tunnelActive=${tunnelIsActive}`;
             Logger.error('Jump host sendCommand failed - connection check', {
                 isConnected: this.isConnected,
                 jumpHostConnected: this.jumpHostConnected,
+                tunnelActive: tunnelIsActive,
                 target: this.credentials.host,
                 jumpHost: this.credentials.jumpHostHost,
                 deviceType: this.credentials.deviceType
@@ -533,6 +542,11 @@ export class JumpHostConnection extends BaseConnection {
         // For Linux devices, use exec() method instead of shell interaction
         if (this.isLinuxDevice()) {
             return await this.sendLinuxCommand(command);
+        }
+        
+        // For Cisco NX-OS devices, use enhanced shell-based approach with longer timeout
+        if (this.credentials.deviceType === 'cisco_nxos') {
+            return await this.sendNxosCommand(command);
         }
         
         // For other devices, use the standard shell-based approach
@@ -658,6 +672,55 @@ export class JumpHostConnection extends BaseConnection {
                 });
             });
         });
+    }
+
+    // NX-OS specific command execution through jump host with enhanced timeout handling
+    private async sendNxosCommand(command: string): Promise<any> {
+        try {
+            if (!this.isConnected || !this.currentChannel) {
+                throw new Error('Not connected to device');
+            }
+
+            Logger.debug('Executing NX-OS command through jump host', {
+                command,
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost,
+                deviceType: this.credentials.deviceType
+            });
+
+            // Send the command
+            await this.writeChannel(command + this.newline);
+            
+            // Use longer timeout for NX-OS commands through jump host (15 seconds)
+            const timeout = this.fastMode ? 10000 : 15000;
+            
+            // Wait for response with NX-OS-specific timeout
+            const output = await this.readUntilPrompt(undefined, timeout);
+            
+            // Clean up the output
+            const cleanOutput = this.sanitizeOutput(output, command);
+
+            return {
+                command,
+                output: cleanOutput,
+                success: true
+            };
+
+        } catch (error) {
+            Logger.error('NX-OS command execution failed through jump host', {
+                command,
+                target: this.credentials.host,
+                jumpHost: this.credentials.jumpHostHost,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            
+            return {
+                command,
+                output: '',
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            };
+        }
     }
 
     // Helper method to strip ANSI escape codes (copied from LinuxConnection)

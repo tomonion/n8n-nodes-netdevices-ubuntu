@@ -854,6 +854,19 @@ export class BaseConnection extends EventEmitter {
                 /@.*:\s*~\s*#\s*$/,   // user@host:~# pattern
             ];
 
+            // Add Cisco NX-OS specific prompt patterns
+            const nxosPromptPatterns = [
+                /.*#\s*$/,                    // Any hostname followed by #
+                /.*\(config.*\)#\s*$/,        // Configuration mode prompts
+                /.*\(config\)#\s*$/,          // Basic config mode
+                /.*switch#\s*$/,              // NX-OS switch prompt
+                /.*nexus#\s*$/,               // NX-OS nexus prompt
+                /.*\-nxos.*#\s*$/,            // Devices with "nxos" in hostname
+                /.*mgmt.*#\s*$/,              // Management interface prompts
+                /.*spine.*#\s*$/,             // Spine switch prompts
+                /.*leaf.*#\s*$/,              // Leaf switch prompts
+            ];
+
             const onData = (data: string) => {
                 buffer += data;
                 
@@ -870,6 +883,15 @@ export class BaseConnection extends EventEmitter {
                 const hasLinuxPrompt = linuxPromptPatterns.some(pattern => pattern.test(buffer));
                 
                 if (hasLinuxPrompt) {
+                    cleanup();
+                    resolve(buffer);
+                    return;
+                }
+                
+                // Check for Cisco NX-OS specific prompt patterns
+                const hasNxosPrompt = nxosPromptPatterns.some(pattern => pattern.test(buffer));
+                
+                if (hasNxosPrompt) {
                     cleanup();
                     resolve(buffer);
                     return;
@@ -894,7 +916,8 @@ export class BaseConnection extends EventEmitter {
                     // If we see the same prompt pattern twice, it's likely a prompt
                     if (lastLine.length > 0 && 
                         (lastLine.includes(prompt) || 
-                         linuxPromptPatterns.some(pattern => pattern.test(lastLine)))) {
+                         linuxPromptPatterns.some(pattern => pattern.test(lastLine)) ||
+                         nxosPromptPatterns.some(pattern => pattern.test(lastLine)))) {
                         cleanup();
                         resolve(buffer);
                         return;
