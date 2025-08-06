@@ -32,6 +32,22 @@ export class DeviceSpecificJumpHostConnection extends JumpHostConnection {
 	}
 
 	/**
+	 * Overrides the base connect method to ensure session preparation is
+	 * called *after* the jump host and target connections are established.
+	 */
+	public async connect(): Promise<void> {
+		// First, establish the jump host connection and tunnel
+		await super.connect();
+
+		// Now, perform session preparation on the established connection
+		if (this.isConnected) {
+			await this.sessionPreparation();
+		} else {
+			throw new Error('Target connection was not established through jump host.');
+		}
+	}
+
+	/**
 	 * Overrides the base session preparation to delegate to the specific
 	 * device connection instance, ensuring correct setup (e.g., shell creation).
 	 */
