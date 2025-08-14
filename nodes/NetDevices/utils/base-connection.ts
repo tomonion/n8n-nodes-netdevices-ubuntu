@@ -715,7 +715,7 @@ export class BaseConnection extends EventEmitter {
         }
     }
 
-    private async createShellChannel(): Promise<void> {
+    protected async createShellChannel(): Promise<void> {
         return new Promise((resolve, reject) => {
             this.client.shell((err, channel) => {
                 if (err) {

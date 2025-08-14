@@ -5,9 +5,10 @@ import { LinuxConnection } from './linux';
 import { PaloAltoConnection } from './paloalto';
 import { CienaSaosConnection } from './ciena';
 import { FortinetConnection } from './fortinet';
+import { EricssonConnection, EricssonMinilinkConnection } from './ericsson';
 import { DeviceSpecificJumpHostConnection } from './device-specific-jump-host-connection';
 
-export type SupportedDeviceType = 
+export type SupportedDeviceType =
     | 'cisco_ios'
     | 'cisco_ios_xe'
     | 'cisco_ios_xr'
@@ -19,6 +20,8 @@ export type SupportedDeviceType =
     | 'paloalto_panos'
     | 'ciena_saos'
     | 'fortinet_fortios'
+    | 'ericsson_ipos'
+    | 'ericsson_mltn'
     | 'linux'
     | 'generic';
 
@@ -39,6 +42,8 @@ const CONNECTION_CLASS_MAPPING: ConnectionClassMapping = {
     'paloalto_panos': PaloAltoConnection,
     'ciena_saos': CienaSaosConnection,
     'fortinet_fortios': FortinetConnection,
+    'ericsson_ipos': EricssonConnection,
+    'ericsson_mltn': EricssonMinilinkConnection,
     'linux': LinuxConnection,
     'generic': BaseConnection
 };
@@ -104,6 +109,8 @@ export class ConnectionDispatcher {
             'paloalto_panos': 'Palo Alto PAN-OS',
             'ciena_saos': 'Ciena SAOS',
             'fortinet_fortios': 'Fortinet FortiOS',
+            'ericsson_ipos': 'Ericsson IPOS',
+            'ericsson_mltn': 'Ericsson MiniLink',
             'linux': 'Linux Server',
             'generic': 'Generic SSH'
         };
@@ -171,6 +178,16 @@ export class ConnectionDispatcher {
                 name: 'Fortinet FortiOS',
                 value: 'fortinet_fortios',
                 description: 'Fortinet FortiOS firewalls and security appliances'
+            },
+            {
+                name: 'Ericsson IPOS',
+                value: 'ericsson_ipos',
+                description: 'Ericsson IPOS devices'
+            },
+            {
+                name: 'Ericsson MiniLink',
+                value: 'ericsson_mltn',
+                description: 'Ericsson MiniLink devices'
             },
             {
                 name: 'Linux Server',
@@ -244,7 +261,15 @@ export class ConnectionDispatcher {
                 output.includes('panos') || output.includes('paloalto')) {
                 return 'paloalto_panos';
             }
-            
+
+            // Ericsson detection patterns
+            if (output.includes('ericsson') || output.includes('ipos')) {
+                return 'ericsson_ipos';
+            }
+            if (output.includes('minilink')) {
+                return 'ericsson_mltn';
+            }
+
             // Linux detection patterns
             if (output.includes('linux') || output.includes('ubuntu') || 
                 output.includes('centos') || output.includes('redhat') || 
