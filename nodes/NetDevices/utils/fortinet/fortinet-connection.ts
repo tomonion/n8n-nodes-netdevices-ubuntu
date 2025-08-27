@@ -9,16 +9,55 @@ export class FortinetConnection extends BaseConnection {
 
     constructor(credentials: DeviceCredentials) {
         super(credentials);
+        // Override SSH algorithms for FortiGate compatibility
+        this.setupFortiGateAlgorithms();
+    }
+
+    private setupFortiGateAlgorithms(): void {
+        // Store original method
+        const originalGetOptimizedAlgorithms = this.getOptimizedAlgorithms.bind(this);
+        
+        // Override with FortiGate-specific algorithms
+        this.getOptimizedAlgorithms = () => {
+            const fortiGateAlgorithms = {
+                serverHostKey: ['ssh-rsa', 'ecdsa-sha2-nistp256'],
+                cipher: ['aes128-ctr', 'aes128-cbc', 'aes192-cbc', 'aes256-cbc'],
+                hmac: ['hmac-sha1', 'hmac-sha2-256'],
+                kex: [
+                    'diffie-hellman-group14-sha1',
+                    'diffie-hellman-group-exchange-sha1',
+                    'diffie-hellman-group-exchange-sha256',
+                    'diffie-hellman-group1-sha1'
+                ]
+            };
+            
+            // Return FortiGate algorithms first, then fallback
+            return [fortiGateAlgorithms, ...originalGetOptimizedAlgorithms()];
+        };
     }
 
     public async sessionPreparation(): Promise<void> {
-        await this.createFortinetShellChannel();
-        await this.handleBanner();
-        await this.setBasePrompt();
-        await this.detectVDOMs();
-        await this.determineOSVersion();
-        await this.detectOutputMode();
-        await this.disablePaging();
+        try {
+            // Create shell channel
+            await this.createFortinetShellChannel();
+            
+            // Handle banner and get to prompt
+            await this.handleBanner();
+            
+            // Set base prompt
+            await this.setBasePrompt();
+            
+            // Detect device capabilities
+            await this.detectVDOMs();
+            await this.determineOSVersion();
+            await this.detectOutputMode();
+            
+            // Disable paging
+            await this.disablePaging();
+            
+        } catch (error) {
+            throw new Error(`FortiGate session preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     private async createFortinetShellChannel(): Promise<void> {
@@ -30,32 +69,79 @@ export class FortinetConnection extends BaseConnection {
                 }
                 this.currentChannel = channel;
                 this.currentChannel.setEncoding(this.encoding);
-                setTimeout(() => resolve(), this.fastMode ? 200 : 600);
+                // FortiGate needs more time for shell initialization
+                setTimeout(() => resolve(), this.fastMode ? 500 : 1000);
             });
         });
     }
 
     private async handleBanner(): Promise<void> {
         try {
-            const data = await this.readChannel(3000);
-            // If "set post-login-banner enable" is set, it will require pressing 'a' to accept
+            // Read initial data with longer timeout for FortiGate banner detection
+            const data = await this.readChannel(5000);
+            
+            // Handle "to accept" banner (post-login banner)
             if (data.includes('to accept')) {
                 await this.writeChannel('a' + this.returnChar);
-                await this.readChannel(2000);
+                await this.readChannel(3000);
             }
+            
+            // Handle other common banner types
+            if (data.includes('Press any key to continue') || data.includes('Press Enter to continue')) {
+                await this.writeChannel(this.returnChar);
+                await this.readChannel(3000);
+            }
+            
+            // Handle welcome banners
+            if (data.includes('Welcome') || data.includes('FortiGate') || data.includes('FortiOS')) {
+                // Send return to get to prompt
+                await this.writeChannel(this.returnChar);
+                await this.readChannel(3000);
+            }
+            
         } catch (error) {
-            // Banner handling is optional
+            // Banner handling is optional, continue on failure
+            console.warn('Banner handling failed, continuing:', error);
         }
     }
 
     protected async setBasePrompt(): Promise<void> {
-        await this.writeChannel(this.returnChar);
-        const output = await this.readChannel(3000);
-        const lines = output.trim().split('\n');
-        const lastLine = lines[lines.length - 1];
-        this.basePrompt = lastLine.replace(/[#$]\s*$/, '').trim();
-        this.enabledPrompt = this.basePrompt + '#';
-        this.configPrompt = this.basePrompt + '#';
+        try {
+            // Send return to get a clean prompt
+            await this.writeChannel(this.returnChar);
+            const output = await this.readChannel(3000);
+            
+            // Parse output to find the prompt
+            const lines = output.trim().split('\n');
+            let prompt = '';
+            
+            // Look for the last line that contains a prompt character
+            for (let i = lines.length - 1; i >= 0; i--) {
+                const line = lines[i].trim();
+                if (line.match(/[#$]\s*$/)) {
+                    prompt = line.replace(/[#$]\s*$/, '').trim();
+                    break;
+                }
+            }
+            
+            // Fallback: try to detect prompt from device hostname or output
+            if (!prompt) {
+                const hostnameMatch = output.match(/FortiGate-(\S+)/i) || 
+                                   output.match(/(\S+)\s*[#$]/);
+                if (hostnameMatch) {
+                    prompt = hostnameMatch[1];
+                } else {
+                    prompt = 'FortiGate';
+                }
+            }
+            
+            this.basePrompt = prompt;
+            this.enabledPrompt = this.basePrompt + '#';
+            this.configPrompt = this.basePrompt + '#';
+            
+        } catch (error) {
+            throw new Error(`Failed to set base prompt: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     private async detectVDOMs(): Promise<void> {
@@ -198,6 +284,7 @@ export class FortinetConnection extends BaseConnection {
             }
         } catch (error) {
             // Paging disable may fail with certain roles
+            console.warn('Failed to disable paging, continuing:', error);
         }
     }
 
@@ -208,7 +295,8 @@ export class FortinetConnection extends BaseConnection {
             }
 
             await this.writeChannel(command + this.newline);
-            const timeout = this.fastMode ? 8000 : 15000;
+            // FortiGate commands may take longer, especially for complex operations
+            const timeout = this.fastMode ? 10000 : 20000;
             const output = await this.readUntilPrompt(undefined, timeout);
             const cleanOutput = this.sanitizeOutput(output, command);
 
