@@ -2,8 +2,8 @@ import { BaseConnection, DeviceCredentials, CommandResult } from '../base-connec
 
 export class CiscoConnection extends BaseConnection {
     private enablePassword: string = '';
-    private inEnableMode: boolean = false;
-    private inConfigMode: boolean = false;
+    protected inEnableMode: boolean = false;
+    protected inConfigMode: boolean = false;
 
     constructor(credentials: DeviceCredentials & { enablePassword?: string }) {
         super(credentials);

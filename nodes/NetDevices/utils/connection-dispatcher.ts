@@ -7,6 +7,7 @@ import { CienaSaosConnection } from './ciena';
 import { FortinetConnection } from './fortinet';
 import { EricssonConnection, EricssonMinilinkConnection } from './ericsson';
 import { DeviceSpecificJumpHostConnection } from './device-specific-jump-host-connection';
+import { VyosConnection } from './vyos';
 
 export type SupportedDeviceType =
     | 'cisco_ios'
@@ -23,7 +24,8 @@ export type SupportedDeviceType =
     | 'ericsson_ipos'
     | 'ericsson_mltn'
     | 'linux'
-    | 'generic';
+    | 'generic'
+    | 'vyos';
 
 export interface ConnectionClassMapping {
     [key: string]: typeof BaseConnection;
@@ -45,7 +47,8 @@ const CONNECTION_CLASS_MAPPING: ConnectionClassMapping = {
     'ericsson_ipos': EricssonConnection,
     'ericsson_mltn': EricssonMinilinkConnection,
     'linux': LinuxConnection,
-    'generic': BaseConnection
+    'generic': BaseConnection,
+    'vyos': VyosConnection,
 };
 
 export class ConnectionDispatcher {
@@ -112,7 +115,8 @@ export class ConnectionDispatcher {
             'ericsson_ipos': 'Ericsson IPOS',
             'ericsson_mltn': 'Ericsson MiniLink',
             'linux': 'Linux Server',
-            'generic': 'Generic SSH'
+            'generic': 'Generic SSH',
+            'vyos': 'VyOS',
         };
         
         return displayNames[deviceType.toLowerCase()] || deviceType;
@@ -198,6 +202,11 @@ export class ConnectionDispatcher {
                 name: 'Generic SSH',
                 value: 'generic',
                 description: 'Generic SSH connection'
+            },
+            {
+                name: 'VyOS',
+                value: 'vyos',
+                description: 'VyOS routers'
             }
         ];
     }
