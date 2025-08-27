@@ -4,7 +4,7 @@ A powerful, TypeScript-based n8n custom node for managing network devices via SS
 
 ## Key Features
 
--   **Multi-Vendor Support**: Manage devices from Cisco, Juniper, Palo Alto, Ericsson, and more.
+-   **Multi-Vendor Support**: Manage devices from Cisco, Juniper, Palo Alto, Fortinet, Ericsson, and more.
 -   **Secure Connections**: Utilizes the battle-tested `ssh2` library for secure and reliable SSH sessions.
 -   **Flexible Authentication**: Supports both password and SSH key-based authentication, including passphrase-protected keys.
 -   **Jump Host Support**: Securely connect to devices in enterprise environments through bastion servers.
@@ -27,6 +27,7 @@ The node supports a wide variety of network operating systems across multiple ve
 | **Juniper** | `Juniper JunOS` | Juniper routers and switches. |
 | | `Juniper SRX` | Juniper SRX series firewalls. |
 | **Palo Alto** | `Palo Alto PAN-OS` | Palo Alto Networks firewalls (PA-series, VM-series). |
+| **Fortinet** | `Fortinet FortiGate` | Fortinet FortiGate firewalls and security appliances. |
 | **Ericsson** | `Ericsson IPOS` | Ericsson IPOS-based devices. |
 | | `Ericsson MiniLink`| Ericsson's microwave radio systems. |
 | **Linux** | `Linux` | Standard Linux servers and network appliances. |
