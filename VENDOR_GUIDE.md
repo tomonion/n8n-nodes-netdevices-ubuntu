@@ -313,6 +313,7 @@ Some vendors that could be added following this pattern:
 - **Fortinet**: FortiGate firewalls
 - **Mikrotik**: RouterOS devices
 - **Extreme Networks**: Various switch families
+- **VyOS**: Open-source routing platform
 
 ## References
 

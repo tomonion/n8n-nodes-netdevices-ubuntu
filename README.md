@@ -30,6 +30,7 @@ The node supports a wide variety of network operating systems across multiple ve
 | **Fortinet** | `Fortinet FortiGate` | Fortinet FortiGate firewalls and security appliances. |
 | **Ericsson** | `Ericsson IPOS` | Ericsson IPOS-based devices. |
 | | `Ericsson MiniLink`| Ericsson's microwave radio systems. |
+| **VyOS** | `VyOS` | Open-source router and firewall platform. |
 | **Linux** | `Linux` | Standard Linux servers and network appliances. |
 | **Generic** | `Generic` | A basic SSH connection for other compatible devices. |
 

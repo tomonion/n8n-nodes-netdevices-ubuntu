@@ -26,7 +26,8 @@
     "netmiko",
     "infrastructure",
     "automation",
-    "typescript"
+    "typescript",
+    "vyos"
   ],
   "license": "MIT",
   "homepage": "https://github.com/arpit-patel1/n8n-nodes-netdevices",
