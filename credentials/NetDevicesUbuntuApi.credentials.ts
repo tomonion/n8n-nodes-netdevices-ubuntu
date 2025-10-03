@@ -2,8 +2,8 @@ import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 import { ConnectionDispatcher } from '../nodes/NetDevicesUbuntu/utils/index';
 
 export class NetDevicesUbuntuApi implements ICredentialType {
-	name = 'netDevicesUbuntuApi'; // unique name
-	displayName = 'Net Devices Ubuntu API';
+	name = 'netDevicesUbuntuApi';
+	displayName = 'Net Devices API (Ubuntu)'; 
 
 	documentationUrl = 'https://github.com/tomonion/n8n-nodes-netdevices-ubuntu';
 	icon: Icon = 'file:netdevices-ubuntu-icon.svg';
