@@ -55,13 +55,13 @@
     "dist/**/*"
   ],
   "n8n": {
-    "n8nNodesApiVersion": 1,
-    "credentials": [
-      "dist/credentials/NetDevicesUbuntu/NetDevicesUbuntuApi.credentials.js"
-    ],
-    "nodes": [
-      "dist/nodes/NetDevicesUbuntu/NetDevicesUbuntu.node.js"
-    ]
+      "n8nNodesApiVersion": 1,
+      "credentials": [
+        "dist/credentials/NetDevicesUbuntuApi.credentials.js"
+      ],
+      "nodes": [
+        "dist/nodes/NetDevicesUbuntu/NetDevicesUbuntu.node.js"
+      ]
   },
   "devDependencies": {
     "@typescript-eslint/parser": "^8.35.1",
