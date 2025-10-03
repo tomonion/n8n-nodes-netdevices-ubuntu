@@ -57,10 +57,10 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/credentials/NetDevicesUbuntuApi.credentials.js"
+      "dist/credentials/NetDevicesUbuntu/NetDevicesUbuntuApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/NetDevices/NetDevicesUbuntu.node.js"
+      "dist/nodes/NetDevicesUbuntu/NetDevicesUbuntu.node.js"
     ]
   },
   "devDependencies": {
