@@ -3,7 +3,7 @@ import { ConnectionDispatcher } from '../nodes/NetDevices/utils/index';
 
 export class NetDevicesApi implements ICredentialType {
 	name = 'netDevicesApi';
-	displayName = 'Net Devices API';
+	displayName = 'Net Devices Ubuntu API';
 
 	documentationUrl = 'https://github.com/arpit-patel1/n8n-nodes-netdevices';
 	icon: Icon = 'file:netdevices-icon.svg';
