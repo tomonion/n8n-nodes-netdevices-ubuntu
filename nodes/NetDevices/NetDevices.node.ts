@@ -28,7 +28,7 @@ try {
 export class NetDevices implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Net Devices',
-        name: 'netDevices',
+        name: 'netDevices-Ubuntu',
         icon: 'file:netdevices-icon.svg',
         group: ['transform'],
         version: 1,
