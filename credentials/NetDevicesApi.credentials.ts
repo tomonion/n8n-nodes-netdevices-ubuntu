@@ -1,9 +1,9 @@
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
-import { ConnectionDispatcher } from '../nodes/NetDevicesUbuntu/utils/index';
+import { ConnectionDispatcher } from '../nodes/NetDevices/utils/index';
 
 export class NetDevicesUbuntuApi implements ICredentialType {
-	name = 'netDevicesUbuntuApi'; // unique name
-	displayName = 'Net Devices Ubuntu API';
+	name = 'netDevicesUbuntuApi';   // unique internal name
+	displayName = 'Net Devices Ubuntu API'; // shown in n8n
 
 	documentationUrl = 'https://github.com/tomonion/n8n-nodes-netdevices-ubuntu';
 	icon: Icon = 'file:netdevices-ubuntu-icon.svg';
@@ -63,7 +63,7 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			default: '',
 			required: true,
 			displayOptions: { show: { authMethod: ['privateKey'] } },
-			description: 'Paste the complete SSH private key including BEGIN/END lines',
+			description: 'Paste the entire key including -----BEGIN and -----END lines',
 		},
 		{
 			displayName: 'Private Key Passphrase',
@@ -72,7 +72,7 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			typeOptions: { password: true },
 			default: '',
 			displayOptions: { show: { authMethod: ['privateKey'] } },
-			description: 'Passphrase for the private key (optional)',
+			description: 'Passphrase for the SSH private key (if any)',
 		},
 		{
 			displayName: 'Device Type',
@@ -89,7 +89,9 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			type: 'string',
 			typeOptions: { password: true },
 			default: '',
-			displayOptions: { show: { deviceType: ['cisco_ios', 'cisco_ios_xe', 'cisco_nxos', 'cisco_asa'] } },
+			displayOptions: {
+				show: { deviceType: ['cisco_ios', 'cisco_ios_xe', 'cisco_nxos', 'cisco_asa'] },
+			},
 			description: 'Enable password for Cisco devices (optional)',
 		},
 		{
@@ -111,9 +113,8 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			name: 'useJumpHost',
 			type: 'boolean',
 			default: false,
-			description: 'Connect through a jump host (bastion server)',
+			description: 'Whether to connect through a jump host (bastion server)',
 		},
-		// Jump host options (unchanged)
 		{
 			displayName: 'Jump Host Hostname/IP',
 			name: 'jumpHostHost',
@@ -121,6 +122,7 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			default: '',
 			required: true,
 			displayOptions: { show: { useJumpHost: [true] } },
+			description: 'The hostname or IP address of the jump host',
 		},
 		{
 			displayName: 'Jump Host Port',
@@ -129,6 +131,7 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			default: 22,
 			required: true,
 			displayOptions: { show: { useJumpHost: [true] } },
+			description: 'SSH port number for the jump host',
 		},
 		{
 			displayName: 'Jump Host Username',
@@ -137,6 +140,7 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			default: '',
 			required: true,
 			displayOptions: { show: { useJumpHost: [true] } },
+			description: 'Username for jump host authentication',
 		},
 		{
 			displayName: 'Jump Host Authentication Method',
@@ -149,6 +153,7 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			default: 'password',
 			required: true,
 			displayOptions: { show: { useJumpHost: [true] } },
+			description: 'Authentication method for the jump host',
 		},
 		{
 			displayName: 'Jump Host Password',
@@ -157,7 +162,10 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			typeOptions: { password: true },
 			default: '',
 			required: true,
-			displayOptions: { show: { useJumpHost: [true], jumpHostAuthMethod: ['password'] } },
+			displayOptions: {
+				show: { useJumpHost: [true], jumpHostAuthMethod: ['password'] },
+			},
+			description: 'Password for jump host authentication',
 		},
 		{
 			displayName: 'Jump Host SSH Private Key',
@@ -166,7 +174,10 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			typeOptions: { password: true, rows: 5 },
 			default: '',
 			required: true,
-			displayOptions: { show: { useJumpHost: [true], jumpHostAuthMethod: ['privateKey'] } },
+			displayOptions: {
+				show: { useJumpHost: [true], jumpHostAuthMethod: ['privateKey'] },
+			},
+			description: 'Private key for jump host authentication',
 		},
 		{
 			displayName: 'Jump Host Private Key Passphrase',
@@ -174,8 +185,10 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 			type: 'string',
 			typeOptions: { password: true },
 			default: '',
-			required: false,
-			displayOptions: { show: { useJumpHost: [true], jumpHostAuthMethod: ['privateKey'] } },
+			displayOptions: {
+				show: { useJumpHost: [true], jumpHostAuthMethod: ['privateKey'] },
+			},
+			description: 'Passphrase for the jump host private key (if any)',
 		},
 	];
 }
