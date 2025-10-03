@@ -25,7 +25,7 @@ try {
     };
 }
 
-export class NetDevices implements INodeType {
+export class NetDevicesUbuntu implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Net Devices Ubuntu',
         name: 'netDevicesUbuntu',
