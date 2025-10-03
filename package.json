@@ -60,7 +60,7 @@
       "dist/credentials/NetDevicesApi.credentials.ts"
     ],
     "nodes": [
-      "dist/nodes/NetDevices/NetDevices.node.js"
+      "dist/nodes/NetDevices/NetDevicesUbuntu.node.js"
     ]
   },
   "devDependencies": {
