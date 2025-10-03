@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-netdevices-ubuntu",
-  "version": "1.0.65",
+  "version": "1.0.64",
   "description": "n8n node to interact with network devices with modern crypto (Cisco, Juniper, Palo Alto PAN-OS, Fortinet FortiGate, Ciena SAOS, Linux, etc.) - Ubuntu/OpenSSL 3.x compatible",
   "keywords": [
     "n8n-community-node-package",
@@ -57,7 +57,7 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/credentials/NetDevicesApi.credentials.js"
+      "dist/credentials/NetDevicesUbuntuApi.credentials.js"
     ],
     "nodes": [
       "dist/nodes/NetDevices/NetDevicesUbuntu.node.js"

@@ -41,8 +41,8 @@ export class NetDevicesUbuntu implements INodeType {
         outputs: ['main'] as any,
         credentials: [
             {
-                displayName: 'netDevicesApi',
-                name: 'netDevicesApi',
+                displayName: 'netDevicesUbuntuApi',
+                name: 'netDevicesUbuntuApi',
                 required: true,
             }
         ],
