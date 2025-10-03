@@ -1,12 +1,13 @@
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 import { ConnectionDispatcher } from '../nodes/NetDevices/utils/index';
 
-export class NetDevicesApi implements ICredentialType {
-	name = 'netDevicesApi';
-	displayName = 'Net Devices Ubuntu API';
+export class NetDevicesUbuntuApi implements ICredentialType {
+	name = 'netDevicesUbuntuApi';   // unique internal name
+	displayName = 'Net Devices Ubuntu API'; // shown in n8n
 
-	documentationUrl = 'https://github.com/arpit-patel1/n8n-nodes-netdevices';
+	documentationUrl = 'https://github.com/tomonion/n8n-nodes-netdevices-ubuntu';
 	icon: Icon = 'file:netdevices-icon.svg';
+
 	properties: INodeProperties[] = [
 		{
 			displayName: 'Hostname/IP',
@@ -37,14 +38,8 @@ export class NetDevicesApi implements ICredentialType {
 			name: 'authMethod',
 			type: 'options',
 			options: [
-				{
-					name: 'Password',
-					value: 'password',
-				},
-				{
-					name: 'SSH Private Key',
-					value: 'privateKey',
-				},
+				{ name: 'Password', value: 'password' },
+				{ name: 'SSH Private Key', value: 'privateKey' },
 			],
 			default: 'password',
 			required: true,
@@ -57,29 +52,18 @@ export class NetDevicesApi implements ICredentialType {
 			typeOptions: { password: true },
 			default: '',
 			required: true,
-			displayOptions: {
-				show: {
-					authMethod: ['password'],
-				},
-			},
+			displayOptions: { show: { authMethod: ['password'] } },
 			description: 'The password for SSH authentication',
 		},
 		{
 			displayName: 'SSH Private Key',
 			name: 'privateKey',
 			type: 'string',
-			typeOptions: { 
-				password: true,
-				rows: 5,
-			},
+			typeOptions: { password: true, rows: 5 },
 			default: '',
 			required: true,
-			displayOptions: {
-				show: {
-					authMethod: ['privateKey'],
-				},
-			},
-			description: 'The complete SSH private key content (paste the entire key including -----BEGIN and -----END lines)',
+			displayOptions: { show: { authMethod: ['privateKey'] } },
+			description: 'Paste the entire key including -----BEGIN and -----END lines',
 		},
 		{
 			displayName: 'Private Key Passphrase',
@@ -87,13 +71,8 @@ export class NetDevicesApi implements ICredentialType {
 			type: 'string',
 			typeOptions: { password: true },
 			default: '',
-			required: false,
-			displayOptions: {
-				show: {
-					authMethod: ['privateKey'],
-				},
-			},
-			description: 'The passphrase for the SSH private key (leave empty if no passphrase)',
+			displayOptions: { show: { authMethod: ['privateKey'] } },
+			description: 'Passphrase for the SSH private key (if any)',
 		},
 		{
 			displayName: 'Device Type',
@@ -111,11 +90,9 @@ export class NetDevicesApi implements ICredentialType {
 			typeOptions: { password: true },
 			default: '',
 			displayOptions: {
-				show: {
-					deviceType: ['cisco_ios', 'cisco_ios_xe', 'cisco_nxos', 'cisco_asa'],
-				},
+				show: { deviceType: ['cisco_ios', 'cisco_ios_xe', 'cisco_nxos', 'cisco_asa'] },
 			},
-			description: 'The enable password for Cisco devices (optional, uses login password if not provided)',
+			description: 'Enable password for Cisco devices (optional)',
 		},
 		{
 			displayName: 'Connection Timeout',
@@ -154,7 +131,7 @@ export class NetDevicesApi implements ICredentialType {
 			default: 22,
 			required: true,
 			displayOptions: { show: { useJumpHost: [true] } },
-			description: 'The SSH port number for the jump host',
+			description: 'SSH port number for the jump host',
 		},
 		{
 			displayName: 'Jump Host Username',
@@ -163,7 +140,7 @@ export class NetDevicesApi implements ICredentialType {
 			default: '',
 			required: true,
 			displayOptions: { show: { useJumpHost: [true] } },
-			description: 'The username for jump host SSH authentication',
+			description: 'Username for jump host authentication',
 		},
 		{
 			displayName: 'Jump Host Authentication Method',
@@ -176,7 +153,7 @@ export class NetDevicesApi implements ICredentialType {
 			default: 'password',
 			required: true,
 			displayOptions: { show: { useJumpHost: [true] } },
-			description: 'The authentication method for jump host',
+			description: 'Authentication method for the jump host',
 		},
 		{
 			displayName: 'Jump Host Password',
@@ -185,8 +162,10 @@ export class NetDevicesApi implements ICredentialType {
 			typeOptions: { password: true },
 			default: '',
 			required: true,
-			displayOptions: { show: { useJumpHost: [true], jumpHostAuthMethod: ['password'] } },
-			description: 'The password for jump host SSH authentication',
+			displayOptions: {
+				show: { useJumpHost: [true], jumpHostAuthMethod: ['password'] },
+			},
+			description: 'Password for jump host authentication',
 		},
 		{
 			displayName: 'Jump Host SSH Private Key',
@@ -195,8 +174,10 @@ export class NetDevicesApi implements ICredentialType {
 			typeOptions: { password: true, rows: 5 },
 			default: '',
 			required: true,
-			displayOptions: { show: { useJumpHost: [true], jumpHostAuthMethod: ['privateKey'] } },
-			description: 'The SSH private key for jump host authentication',
+			displayOptions: {
+				show: { useJumpHost: [true], jumpHostAuthMethod: ['privateKey'] },
+			},
+			description: 'Private key for jump host authentication',
 		},
 		{
 			displayName: 'Jump Host Private Key Passphrase',
@@ -204,9 +185,10 @@ export class NetDevicesApi implements ICredentialType {
 			type: 'string',
 			typeOptions: { password: true },
 			default: '',
-			required: false,
-			displayOptions: { show: { useJumpHost: [true], jumpHostAuthMethod: ['privateKey'] } },
-			description: 'The passphrase for jump host SSH private key (leave empty if no passphrase)',
+			displayOptions: {
+				show: { useJumpHost: [true], jumpHostAuthMethod: ['privateKey'] },
+			},
+			description: 'Passphrase for the jump host private key (if any)',
 		},
 	];
 }
