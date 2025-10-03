@@ -6,7 +6,7 @@ export class NetDevicesUbuntuApi implements ICredentialType {
 	displayName = 'Net Devices Ubuntu API'; 
 
 	documentationUrl = 'https://github.com/tomonion/n8n-nodes-netdevices-ubuntu';
-	icon: Icon = 'file:netdevices-ubuntu-icon.svg';
+	icon: Icon = 'file:ubuntu_red_variant.svg';
 
 	properties: INodeProperties[] = [
 		{

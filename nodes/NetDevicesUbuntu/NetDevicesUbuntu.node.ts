@@ -29,7 +29,7 @@ export class NetDevicesUbuntu implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Net Devices Ubuntu',
 		name: 'netDevicesUbuntu', // unique
-		icon: 'file:netdevices-icon.svg',
+		icon: 'file:ubuntu_red_variant.svg',
 		group: ['transform'],
 		version: 1,
 		description: 'Manage network devices via SSH from N8N on Ubuntu Base Image',
