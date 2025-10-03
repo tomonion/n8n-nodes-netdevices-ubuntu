@@ -1,4 +1,3 @@
-/* eslint-disable n8n-nodes-base/cred-filename-against-convention */
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 import { ConnectionDispatcher } from '../nodes/NetDevices/utils/index';
 

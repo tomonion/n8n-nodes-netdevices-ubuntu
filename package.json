@@ -57,7 +57,7 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/credentials/NetDevicesApi.credentials.js"
+      "dist/credentials/NetDevicesApi.credentials.ts"
     ],
     "nodes": [
       "dist/nodes/NetDevices/NetDevices.node.js"
