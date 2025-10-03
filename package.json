@@ -1,5 +1,5 @@
 {
-  "name": "@tbarrett/n8n-nodes-netdevices-ubuntu",
+  "name": "n8n-nodes-netdevices-ubuntu",
   "version": "1.0.58-ubuntu-fix",
   "description": "n8n node to interact with network devices (Cisco, Juniper, Palo Alto PAN-OS, Fortinet FortiGate, Ciena SAOS, Linux, etc.) - Ubuntu/OpenSSL 3.x compatible",
   "keywords": [
