@@ -26,24 +26,22 @@ try {
 }
 
 export class NetDevicesUbuntu implements INodeType {
-    description: INodeTypeDescription = {
-        displayName: 'Net Devices Ubuntu',
-        name: 'netDevicesUbuntu',
-        icon: 'file:netdevices-icon.svg',
-        group: ['transform'],
-        version: 1,
-        description: 'Manage network devices via SSH from N8N on Ubuntu Base Image',
-        defaults: {
-            name: 'Net Devices Ubuntu',
-        },
-        usableAsTool: true,
-        inputs: ['main'] as any,
-        outputs: ['main'] as any,
-        credentials: [
-            {
-                displayName: 'netDevicesUbuntuApi',
-                name: 'netDevicesUbuntuApi',
-                required: true,
+	description: INodeTypeDescription = {
+		displayName: 'Net Devices Ubuntu',
+		name: 'netDevicesUbuntu', // unique
+		icon: 'file:netdevices-icon.svg',
+		group: ['transform'],
+		version: 1,
+		description: 'Manage network devices via SSH from N8N on Ubuntu Base Image',
+		defaults: { name: 'Net Devices Ubuntu' },
+		usableAsTool: true,
+		inputs: ['main'],
+		outputs: ['main'],
+		credentials: [
+			{
+				displayName: 'Net Devices Ubuntu API',
+				name: 'netDevicesUbuntuApi', // <-- must match credential
+				required: true,
             }
         ],
         
