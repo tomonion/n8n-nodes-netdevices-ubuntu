@@ -1,5 +1,5 @@
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
-import { ConnectionDispatcher } from '../nodes/NetDevices/utils/index';
+import { ConnectionDispatcher } from '../nodes/NetDevicesUbuntu/utils/index';
 
 export class NetDevicesUbuntuApi implements ICredentialType {
 	name = 'netDevicesUbuntuApi';   // unique internal name
