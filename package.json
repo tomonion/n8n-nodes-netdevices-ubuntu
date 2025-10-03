@@ -1,7 +1,7 @@
 {
-  "name": "n8n-nodes-netdevices",
-  "version": "1.0.57",
-  "description": "n8n node to interact with network devices (Cisco, Juniper, Palo Alto PAN-OS, Fortinet FortiGate, Ciena SAOS, Linux, etc.)",
+  "name": "n8n-nodes-netdevices-ubuntu",
+  "version": "1.0.58-ubuntu-fix",
+  "description": "n8n node to interact with network devices (Cisco, Juniper, Palo Alto PAN-OS, Fortinet FortiGate, Ciena SAOS, Linux, etc.) - Ubuntu/OpenSSL 3.x compatible",
   "keywords": [
     "n8n-community-node-package",
     "network-automation",
@@ -30,14 +30,14 @@
     "vyos"
   ],
   "license": "MIT",
-  "homepage": "https://github.com/arpit-patel1/n8n-nodes-netdevices",
+  "homepage": "https://github.com/tomonion/n8n-nodes-netdevices-ubuntu",
   "author": {
     "name": "Anonymous Seeker",
     "email": "anonymous.seeker@example.com"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arpit-patel1/n8n-nodes-netdevices.git"
+    "url": "git+https://github.com/tomonion/n8n-nodes-netdevices-ubuntu.git"
   },
   "engines": {
     "node": ">=20.15"

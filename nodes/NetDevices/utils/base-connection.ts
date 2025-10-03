@@ -1190,7 +1190,7 @@ export class BaseConnection extends EventEmitter {
                     'diffie-hellman-group14-sha1'
                 ]
             };
-
+            
             // Password-based algorithms (more conservative)
             const passwordBasedAlgorithms = {
                 serverHostKey: [
@@ -1207,6 +1207,25 @@ export class BaseConnection extends EventEmitter {
                     'diffie-hellman-group14-sha1'
                 ]
             };
+
+            // Choose algorithm set based on authentication method
+            const primaryAlgorithms = this.credentials.authMethod === 'privateKey' 
+                ? keyBasedAlgorithms 
+                : passwordBasedAlgorithms;
+
+            return [
+                primaryAlgorithms,
+                // Fallback for older systems
+                {
+                    serverHostKey: ['ssh-rsa'],
+                    cipher: ['aes128-cbc'],
+                    hmac: ['hmac-sha1'],
+                    kex: ['diffie-hellman-group1-sha1']
+                }
+            ];
+        }
+    }
+
 
             // Choose algorithm set based on authentication method
             const primaryAlgorithms = this.credentials.authMethod === 'privateKey' 
