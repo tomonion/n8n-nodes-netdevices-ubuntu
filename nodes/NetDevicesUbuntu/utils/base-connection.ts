@@ -1158,51 +1158,59 @@ export class BaseConnection extends EventEmitter {
     }
 
     protected getOptimizedAlgorithms(): any[] {
-    if (this.fastMode) {
-        return [
-            {
-                serverHostKey: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa', 'ecdsa-sha2-nistp256'],
-                cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm@openssh.com', 'aes256-gcm@openssh.com'],
-                hmac: ['hmac-sha2-256-etm@openssh.com', 'hmac-sha2-512-etm@openssh.com', 'hmac-sha2-256', 'hmac-sha2-512'],
-                kex: ['curve25519-sha256', 'ecdh-sha2-nistp256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512']
-            }
-        ];
-    } else {
-        const modernAlgorithms = {
-            serverHostKey: [
-                'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
-                'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
-                'ssh-ed25519'
-            ],
-            cipher: [
-                'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
-                'aes128-gcm@openssh.com', 'aes256-gcm@openssh.com',
-                'chacha20-poly1305@openssh.com'
-            ],
-            hmac: [
-                'hmac-sha2-256-etm@openssh.com', 'hmac-sha2-512-etm@openssh.com',
-                'hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1'
-            ],
-            kex: [
-                'curve25519-sha256', 'curve25519-sha256@libssh.org',
-                'ecdh-sha2-nistp256', 'ecdh-sha2-nistp384', 'ecdh-sha2-nistp521',
-                'diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512',
-                'diffie-hellman-group18-sha512'
-            ]
-        };
+        if (this.fastMode) {
+            return [
+                {
+                    serverHostKey: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa', 'ecdsa-sha2-nistp256'],
+                    cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm@openssh.com', 'aes256-gcm@openssh.com'],
+                    hmac: ['hmac-sha2-256-etm@openssh.com', 'hmac-sha2-512-etm@openssh.com', 'hmac-sha2-256', 'hmac-sha2-512'],
+                    kex: ['ecdh-sha2-nistp256', 'ecdh-sha2-nistp384', 'ecdh-sha2-nistp521', 'diffie-hellman-group14-sha256', 'diffie-hellman-group-exchange-sha256']
+                }
+            ];
+        } else {
+            const modernAlgorithms = {
+                serverHostKey: [
+                    'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
+                    'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
+                    'ssh-ed25519'
+                ],
+                cipher: [
+                    'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+                    'aes128-gcm@openssh.com', 'aes256-gcm@openssh.com',
+                    'chacha20-poly1305@openssh.com',
+                    'aes128-cbc', 'aes256-cbc'
+                ],
+                hmac: [
+                    'hmac-sha2-256-etm@openssh.com', 
+                    'hmac-sha2-512-etm@openssh.com',
+                    'hmac-sha2-256', 
+                    'hmac-sha2-512', 
+                    'hmac-sha1'
+                ],
+                kex: [
+                    'ecdh-sha2-nistp256',
+                    'ecdh-sha2-nistp384', 
+                    'ecdh-sha2-nistp521',
+                    'diffie-hellman-group-exchange-sha256',
+                    'diffie-hellman-group14-sha256',
+                    'diffie-hellman-group16-sha512',
+                    'diffie-hellman-group18-sha512',
+                    'diffie-hellman-group14-sha1'
+                ]
+            };
 
-        return [
-            modernAlgorithms,
-            // Fallback for legacy devices (if you have other older switches)
-            {
-                serverHostKey: ['ssh-rsa', 'ssh-dss'],
-                cipher: ['aes128-cbc', 'aes256-cbc', '3des-cbc'],
-                hmac: ['hmac-sha1', 'hmac-sha2-256'],
-                kex: ['diffie-hellman-group14-sha1', 'diffie-hellman-group1-sha1']
-            }
-        ];
+            return [
+                modernAlgorithms,
+                // Fallback for really old/legacy devices
+                {
+                    serverHostKey: ['ssh-rsa', 'ssh-dss'],
+                    cipher: ['aes128-cbc', 'aes256-cbc', '3des-cbc'],
+                    hmac: ['hmac-sha1', 'hmac-sha2-256'],
+                    kex: ['diffie-hellman-group14-sha1', 'diffie-hellman-group1-sha1']
+                }
+            ];
+        }
     }
-}
 
     // Static method to force cleanup connection pool
     static forceCleanupConnectionPool(): void {
